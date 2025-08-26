@@ -64,19 +64,18 @@ async def handle_plans(message: Message) -> None:
             )
             tid = (t.get("id") if isinstance(t, dict) else None) or (t.get("template_id") if isinstance(t, dict) else None)
             limit = t.get("data_limit", 0) if isinstance(t, dict) else 0
-            duration = (t.get("duration_days") if isinstance(t, dict) else None) or 0
+            expire_seconds = t.get("expire_duration", 0) if isinstance(t, dict) else 0
 
             if isinstance(limit, (int, float)) and limit > 0:
                 gb = limit / (1024 ** 3)
                 limit_str = f"{gb:.0f}GB"
             else:
-                limit_str = "نامحدود/تعریف‌نشده"
+                limit_str = "نامحدود"
 
-            dur_str = f"{duration}d" if isinstance(duration, (int, float)) and duration > 0 else ""
+            days = int(expire_seconds // 86400) if isinstance(expire_seconds, (int, float)) and expire_seconds > 0 else 0
+            dur_str = f"{days}d" if days > 0 else "بدون محدودیت زمانی"
 
-            line = f"- {title} (ID: {tid}) | حجم: {limit_str}"
-            if dur_str:
-                line += f" | مدت: {dur_str}"
+            line = f"- {title} (ID: {tid}) | حجم: {limit_str} | مدت: {dur_str}"
             lines.append(line)
 
         await message.answer("پلن‌های موجود:\n" + "\n".join(lines))
