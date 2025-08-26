@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 
@@ -28,7 +28,7 @@ class Settings:
     marzban_admin_password: str = os.getenv("MARZBAN_ADMIN_PASSWORD", "")
 
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    telegram_admin_ids: List[int] = _parse_csv_ints(os.getenv("TELEGRAM_ADMIN_IDS", ""))
+    telegram_admin_ids: List[int] = field(default_factory=lambda: _parse_csv_ints(os.getenv("TELEGRAM_ADMIN_IDS", "")))
 
     db_url: str = os.getenv("DB_URL", "")
 
