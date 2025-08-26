@@ -1,0 +1,10 @@
+aiogram>=3.4,<3.6
+httpx>=0.26,<0.28
+pydantic>=2.6,<2.9
+SQLAlchemy>=2.0,<2.1
+asyncmy>=0.2,<0.3
+alembic>=1.13,<1.14
+python-dotenv>=1.0,<2.0
+aiojobs>=1.1,<1.2
+tenacity>=8.2,<9.0
+uvloop>=0.19,<0.20; platform_system != "Windows"

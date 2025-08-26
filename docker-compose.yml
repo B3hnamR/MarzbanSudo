@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  db:
+    image: mariadb:10.11
+    container_name: marzban_sudo_db
+    restart: unless-stopped
+    environment:
+      - MARIADB_DATABASE=marzban_sudo
+      - MARIADB_USER=sudo_user
+      - MARIADB_PASSWORD=${DB_PASSWORD:-change_me}
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-change_me_root}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: marzban_sudo_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 512M
+
+volumes:
+  db_data:
