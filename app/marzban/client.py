@@ -34,11 +34,20 @@ class MarzbanClient:
 
     async def _login(self) -> None:
         url = f"{self.base_url}/api/admin/token"
-        payload = {"username": self.username, "password": self.password}
-        resp = await self._client.post(url, json=payload)
+        # Use form-encoded grant_type=password for compatibility with Marzban 0.8.4
+        form = {
+            "grant_type": "password",
+            "username": self.username,
+            "password": self.password,
+        }
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "accept": "application/json",
+        }
+        resp = await self._client.post(url, data=form, headers=headers)
         resp.raise_for_status()
-        data = resp.json()
-        token = data.get("access_token")
+        data_json = resp.json()
+        token = data_json.get("access_token")
         if not token:
             raise RuntimeError("Marzban token missing in response")
         self._auth.access_token = token
