@@ -6,7 +6,12 @@ from typing import List
 from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.marzban.client import get_client
+from app.db.session import get_session
+from app.db.models import Plan
 
 try:
     # Optional: load .env in non-production environments
@@ -47,47 +52,25 @@ async def handle_start(message: Message) -> None:
 @router.message(Command("plans"))
 async def handle_plans(message: Message) -> None:
     await message.answer("در حال دریافت پلن‌ها...")
-    client = None
     try:
-        client = await get_client()
-        data = await client.get_user_templates()
-        templates = data.get("result") if isinstance(data, dict) else data
-        if not templates:
-            await message.answer("هیچ پلن فعالی یافت نشد.")
-            return
-        lines = []
-        for t in templates:
-            title = (
-                (t.get("title") if isinstance(t, dict) else None)
-                or (t.get("name") if isinstance(t, dict) else None)
-                or f"Template #{(t.get('id') if isinstance(t, dict) else None) or (t.get('template_id') if isinstance(t, dict) else '')}"
-            )
-            tid = (t.get("id") if isinstance(t, dict) else None) or (t.get("template_id") if isinstance(t, dict) else None)
-            limit = t.get("data_limit", 0) if isinstance(t, dict) else 0
-            expire_seconds = t.get("expire_duration", 0) if isinstance(t, dict) else 0
-
-            if isinstance(limit, (int, float)) and limit > 0:
-                gb = limit / (1024 ** 3)
-                limit_str = f"{gb:.0f}GB"
-            else:
-                limit_str = "نامحدود"
-
-            days = int(expire_seconds // 86400) if isinstance(expire_seconds, (int, float)) and expire_seconds > 0 else 0
-            dur_str = f"{days}d" if days > 0 else "بدون محدودیت زمانی"
-
-            line = f"- {title} (ID: {tid}) | حجم: {limit_str} | مدت: {dur_str}"
-            lines.append(line)
-
-        await message.answer("پلن‌های موجود:\n" + "\n".join(lines))
+        async for session in get_session():
+            rows = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
+            if not rows:
+                await message.answer("هیچ پلن فعالی در سیستم ثبت نشده است. ابتدا sync_plans را اجرا کنید.")
+                return
+            lines = []
+            for p in rows:
+                if p.data_limit_bytes and p.data_limit_bytes > 0:
+                    gb = p.data_limit_bytes / (1024 ** 3)
+                    limit_str = f"{gb:.0f}GB"
+                else:
+                    limit_str = "نامحدود"
+                dur_str = f"{p.duration_days}d" if p.duration_days and p.duration_days > 0 else "بدون محدودیت زمانی"
+                lines.append(f"- {p.title} (ID: {p.template_id}) | حجم: {limit_str} | مدت: {dur_str}")
+            await message.answer("پلن‌های موجود:\n" + "\n".join(lines))
     except Exception as e:
-        logging.exception("Failed to fetch plans: %s", e)
-        await message.answer("خطا در دریافت پلن‌ها. لطفاً کمی بعد تلاش کنید.")
-    finally:
-        try:
-            if client is not None:
-                await client.aclose()
-        except Exception:
-            pass
+        logging.exception("Failed to fetch plans from DB: %s", e)
+        await message.answer("خطا در دریافت پلن‌ها از سیستم. لطفاً کمی ��عد تلاش کنید.")
 
 
 @router.message(Command("account"))
