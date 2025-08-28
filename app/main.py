@@ -10,6 +10,7 @@ from aiogram.types import Message
 from app.db.session import get_session, session_scope
 from app.logging_config import setup_logging
 from app.bot.handlers import plans as plans_handlers
+from app.bot.middlewares.rate_limit import RateLimitMiddleware
 
 try:
     # Optional: load .env in non-production environments
@@ -74,6 +75,14 @@ async def main() -> None:
 
     bot = Bot(token=token)
     dp = Dispatcher()
+
+    # Rate limit per-user
+    try:
+        max_per_min = int(os.getenv("RATE_LIMIT_USER_MSG_PER_MIN", "20"))
+    except ValueError:
+        max_per_min = 20
+    dp.update.outer_middleware(RateLimitMiddleware(max_per_minute=max_per_min))
+
     dp.include_router(router)
     dp.include_router(plans_handlers.router)
 
