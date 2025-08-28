@@ -18,6 +18,12 @@ def _parse_csv_ints(raw: str) -> List[int]:
     return ids
 
 
+def _bool(env: str | None, default: bool = False) -> bool:
+    if env is None:
+        return default
+    return env.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class Settings:
     app_env: str = os.getenv("APP_ENV", "production")
@@ -43,6 +49,12 @@ class Settings:
     pending_order_autocancel_hours: int = int(os.getenv("PENDING_ORDER_AUTOCANCEL_HOURS", "12"))
     rate_limit_user_msg_per_min: int = int(os.getenv("RATE_LIMIT_USER_MSG_PER_MIN", "20"))
     receipt_retention_days: int = int(os.getenv("RECEIPT_RETENTION_DAYS", "30"))
+
+    # Trial settings
+    trial_enabled: bool = _bool(os.getenv("TRIAL_ENABLED"), False)
+    trial_template_id: int = int(os.getenv("TRIAL_TEMPLATE_ID", "1"))
+    trial_data_gb: int = int(os.getenv("TRIAL_DATA_GB", "2"))
+    trial_duration_days: int = int(os.getenv("TRIAL_DURATION_DAYS", "1"))
 
 
 settings = Settings()

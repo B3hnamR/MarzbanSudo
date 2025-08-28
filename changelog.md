@@ -257,3 +257,21 @@ Outcome: Cleaner bot structure, ready for adding order flows and background jobs
   - Shares the same image/env/volumes as bot; independent lifecycle.
 
 Outcome: Background jobs (sync plans, notifications) run independently of Telegram bot.
+
+---
+
+## 2025-08-29 – Feature: Account view (live Marzban) and Trial provisioning
+
+- Edit: app/bot/handlers/account.py
+  - Fetches user info from Marzban (data_limit, used_traffic, expire, token) for tg_<telegram_id>.
+  - Displays subscription links based on SUB_DOMAIN_PREFERRED.
+- New: app/utils/username.py, app/utils/time.py, app/utils/money.py
+  - Helpers for username generation, time conversions, and money formatting.
+- New: app/services/provisioning.py
+  - `provision_trial(telegram_id)` creates or updates a trial user with configured limits.
+- New: app/bot/handlers/trial.py
+  - `/trial` command to request a trial account when TRIAL_ENABLED=1.
+- Edit: app/config.py and .env.example
+  - Added trial configuration: TRIAL_ENABLED, TRIAL_TEMPLATE_ID, TRIAL_DATA_GB, TRIAL_DURATION_DAYS.
+
+Outcome: Users can view live account info; trial flow is available for quick onboarding.
