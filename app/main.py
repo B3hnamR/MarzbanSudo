@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.marzban.client import get_client
 from app.db.session import get_session, session_scope
 from app.db.models import Plan
+from app.scripts.sync_plans import sync_templates_to_plans
 
 try:
     # Optional: load .env in non-production environments
@@ -56,8 +57,16 @@ async def handle_plans(message: Message) -> None:
         async with session_scope() as session:
             rows = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
             if not rows:
-                await message.answer("هیچ پلن فعالی در سیستم ثبت نشده است. ابتدا sync_plans را اجرا کنید.")
-                return
+                await message.answer("هیچ پلنی در پایگاه‌داده ثبت نشده است. در حال همگام‌سازی از Marzban...")
+                changed = await sync_templates_to_plans(session)
+                if not changed:
+                    await message.answer("همگام‌سازی انجام شد اما پلنی یافت نشد. لطفاً در Marzban حداقل یک Template فعال ایجاد کنید.")
+                    return
+                # Re-query after sync
+                rows = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
+                if not rows:
+                    await message.answer("پس از همگام‌سازی هم پلنی یافت نشد. تنظیمات Marzban و دسترسی‌ها را بررسی کنید.")
+                    return
             lines = []
             for p in rows:
                 if p.data_limit_bytes and p.data_limit_bytes > 0:
