@@ -275,3 +275,45 @@ Outcome: Background jobs (sync plans, notifications) run independently of Telegr
   - Added trial configuration: TRIAL_ENABLED, TRIAL_TEMPLATE_ID, TRIAL_DATA_GB, TRIAL_DURATION_DAYS.
 
 Outcome: Users can view live account info; trial flow is available for quick onboarding.
+
+---
+
+## 2025-08-29 – Fix: Trial provisioning robustness (409/500 handling)
+
+- Edit: app/services/provisioning.py
+  - Added validation for `TRIAL_TEMPLATE_ID` against server templates.
+  - Implemented fallback path when create/update fails:
+    - On create 409/5xx → try update.
+    - On update failure → try reset_user → update; if still failing → revoke_sub → update.
+
+Outcome: Reduced hard failures when server returns transient or stateful errors.
+
+---
+
+## 2025-08-29 – Refactor: Trial provisioning via minimal inbounds/proxies payload (UI-safe)
+
+- Edit: app/services/provisioning.py
+  - Switched from template-based creation to raw JSON payload without `template_id`:
+    - Create with minimal fields: username, status=active, expire=0, data_limit=0, data_limit_reset_strategy=no_reset,
+      inbounds={ vless: [valid tags from /api/inbounds excluding 'Info'] }, proxies={ vless: {} }, next_plan, note.
+    - Then set expire and data_limit in two separate PUT calls.
+  - Reads inbound tags from `/api/inbounds` and filters out non-service tags.
+  - Returns current user snapshot from GET after provisioning.
+
+Outcome: Trial creation is stable, UI remains healthy, and /trial + /account verified end-to-end.
+
+---
+
+## 2025-08-29 – Admin bot controls for Marzban (create/delete/reset/revoke/set)
+
+- New: app/services/marzban_ops.py
+  - Minimal user creation without template_id; safe inbounds/proxies; update limits; reset, revoke_sub, delete, get.
+- New: app/bot/handlers/admin_manage.py
+  - `/admin_create [username]` – create minimal user (defaults to caller tg_<id> if omitted)
+  - `/admin_delete <username>` – delete user
+  - `/admin_reset <username>` – reset usage
+  - `/admin_revoke <username>` – revoke subscription link
+  - `/admin_set <username> <GB> <DAYS>` – set data_limit and expire
+- Edit: app/main.py – included admin_manage router
+
+Outcome: Direct Marzban management from Telegram bot without leaving the chat.

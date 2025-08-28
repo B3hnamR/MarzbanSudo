@@ -13,6 +13,7 @@ from app.bot.handlers import plans as plans_handlers
 from app.bot.handlers import start as start_handlers
 from app.bot.handlers import account as account_handlers
 from app.bot.handlers import admin as admin_handlers
+from app.bot.handlers import admin_manage as admin_manage_handlers
 from app.bot.handlers import orders as orders_handlers
 from app.bot.handlers import trial as trial_handlers
 from app.bot.middlewares.rate_limit import RateLimitMiddleware
@@ -75,6 +76,7 @@ async def main() -> None:
     dp.include_router(plans_handlers.router)
     dp.include_router(account_handlers.router)
     dp.include_router(admin_handlers.router)
+    dp.include_router(admin_manage_handlers.router)
     dp.include_router(orders_handlers.router)
     dp.include_router(trial_handlers.router)
 
