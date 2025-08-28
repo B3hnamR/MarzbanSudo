@@ -76,12 +76,14 @@ async def main() -> None:
     bot = Bot(token=token)
     dp = Dispatcher()
 
-    # Rate limit per-user
+    # Rate limit per-user (apply to message and callback_query updates)
     try:
         max_per_min = int(os.getenv("RATE_LIMIT_USER_MSG_PER_MIN", "20"))
     except ValueError:
         max_per_min = 20
-    dp.update.outer_middleware(RateLimitMiddleware(max_per_minute=max_per_min))
+    rate_limiter = RateLimitMiddleware(max_per_minute=max_per_min)
+    dp.message.middleware(rate_limiter)
+    dp.callback_query.middleware(rate_limiter)
 
     dp.include_router(router)
     dp.include_router(plans_handlers.router)
