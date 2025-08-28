@@ -247,3 +247,13 @@ Outcome: Spam mitigation; protects DB and external APIs.
   - Not wired into Compose yet.
 
 Outcome: Cleaner bot structure, ready for adding order flows and background jobs.
+
+---
+
+## 2025-08-28 – Worker service for background jobs
+
+- Edit: docker-compose.yml
+  - Added `worker` service that runs `app.services.scheduler.run_scheduler()`.
+  - Shares the same image/env/volumes as bot; independent lifecycle.
+
+Outcome: Background jobs (sync plans, notifications) run independently of Telegram bot.

@@ -45,5 +45,26 @@ services:
           cpus: '0.75'
           memory: 512M
 
+worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: marzban_sudo_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    command: python -c "import asyncio; from app.services.scheduler import run_scheduler; asyncio.run(run_scheduler())"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+
 volumes:
   db_data:
