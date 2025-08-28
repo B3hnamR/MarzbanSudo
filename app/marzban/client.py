@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -21,8 +22,10 @@ class MarzbanClient:
         self.username = username
         self.password = password
         self._auth = MarzbanAuth()
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0, read=10.0, write=10.0))
         self._auth_lock = asyncio.Lock()
+        self._max_attempts = 3
+        self._backoff_base = 0.5  # seconds
 
     async def _ensure_token(self) -> None:
         if self._auth.access_token:
@@ -54,7 +57,7 @@ class MarzbanClient:
         logging.info("Marzban token acquired")
 
     def _headers(self) -> Dict[str, str]:
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "accept": "application/json"}
         if self._auth.access_token:
             headers["Authorization"] = f"Bearer {self._auth.access_token}"
         return headers
@@ -62,19 +65,42 @@ class MarzbanClient:
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         await self._ensure_token()
         url = f"{self.base_url}{path}"
-        try:
-            resp = await self._client.request(method, url, headers=self._headers(), **kwargs)
-            if resp.status_code == 401:
-                # token expired → retry once
-                async with self._auth_lock:
-                    self._auth.access_token = None
-                    await self._login()
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, self._max_attempts + 1):
+            try:
                 resp = await self._client.request(method, url, headers=self._headers(), **kwargs)
-            resp.raise_for_status()
-            return resp
-        except httpx.HTTPError as e:
-            logging.exception("HTTP error on %s %s: %s", method, url, e)
-            raise
+                if resp.status_code == 401:
+                    # token expired → retry once after re-login
+                    async with self._auth_lock:
+                        self._auth.access_token = None
+                        await self._login()
+                    resp = await self._client.request(method, url, headers=self._headers(), **kwargs)
+
+                if resp.status_code in {429, 502, 503, 504}:
+                    if attempt < self._max_attempts:
+                        delay = self._backoff_base * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
+                        logging.warning("Retryable status %s on %s %s, attempt %d/%d, sleeping %.2fs", resp.status_code, method, url, attempt, self._max_attempts, delay)
+                        await asyncio.sleep(delay)
+                        continue
+                resp.raise_for_status()
+                return resp
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteError, httpx.ReadError, httpx.TransportError, httpx.TimeoutException) as e:  # type: ignore[attr-defined]
+                last_exc = e
+                if attempt < self._max_attempts:
+                    delay = self._backoff_base * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
+                    logging.warning("Network error on %s %s: %s, attempt %d/%d, sleeping %.2fs", method, url, e, attempt, self._max_attempts, delay)
+                    await asyncio.sleep(delay)
+                    continue
+                logging.exception("HTTP transport error on %s %s after %d attempts: %s", method, url, attempt, e)
+                raise
+            except httpx.HTTPError as e:
+                # Non-retryable HTTP error
+                logging.exception("HTTP error on %s %s: %s", method, url, e)
+                raise
+        # If loop exits without return and without raising (unlikely), raise last exception
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"Request failed without exception: {method} {url}")
 
     # API wrappers (to be completed in Phase 1)
     async def get_user_templates(self) -> Dict[str, Any]:
