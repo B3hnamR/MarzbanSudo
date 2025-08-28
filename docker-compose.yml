@@ -45,7 +45,7 @@ services:
           cpus: '0.75'
           memory: 512M
 
-worker:
+  worker:
     build:
       context: .
       dockerfile: Dockerfile
