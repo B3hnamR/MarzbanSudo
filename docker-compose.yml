@@ -33,6 +33,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
+    command: sh -c "alembic upgrade head && python -m app.main"
     healthcheck:
       test: ["CMD", "python", "-m", "app.healthcheck"]
       interval: 30s

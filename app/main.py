@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.marzban.client import get_client
-from app.db.session import get_session
+from app.db.session import get_session, session_scope
 from app.db.models import Plan
 
 try:
@@ -53,7 +53,7 @@ async def handle_start(message: Message) -> None:
 async def handle_plans(message: Message) -> None:
     await message.answer("در حال دریافت پلن‌ها...")
     try:
-        async for session in get_session():
+        async with session_scope() as session:
             rows = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
             if not rows:
                 await message.answer("هیچ پلن فعالی در سیستم ثبت نشده است. ابتدا sync_plans را اجرا کنید.")
@@ -70,7 +70,7 @@ async def handle_plans(message: Message) -> None:
             await message.answer("پلن‌های موجود:\n" + "\n".join(lines))
     except Exception as e:
         logging.exception("Failed to fetch plans from DB: %s", e)
-        await message.answer("خطا در دریافت پلن‌ها از سیستم. لطفاً کمی ��عد تلاش کنید.")
+        await message.answer("خطا در دریافت پلن‌ها از سیستم. لطفاً کمی بعد تلاش کنید.")
 
 
 @router.message(Command("account"))

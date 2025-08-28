@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -32,8 +33,27 @@ def get_session_maker() -> async_sessionmaker[AsyncSession]:
     return _SessionLocal
 
 
+@asynccontextmanager
+async def session_scope() -> AsyncGenerator[AsyncSession, None]:
+    """Async context manager for DB sessions.
+
+    Usage:
+        async with session_scope() as session:
+            ...
+    """
+    SessionLocal = get_session_maker()
+    async with SessionLocal() as session:
+        try:
+            yield session
+        finally:
+            # Session is closed by context manager automatically
+            pass
+
+
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI-style dependency (usable in services/handlers too)."""
+    """Compatibility generator (existing call sites).
+    Prefer using session_scope() in new code.
+    """
     SessionLocal = get_session_maker()
     async with SessionLocal() as session:
         yield session
