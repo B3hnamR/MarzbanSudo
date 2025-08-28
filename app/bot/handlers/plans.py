@@ -1,4 +1,4 @@
-گکگfrom __future__ import annotations
+from __future__ import annotations
 
 import logging
 from typing import List
@@ -23,7 +23,7 @@ async def handle_plans(message: Message) -> None:
         async with session_scope() as session:
             rows = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
             if not rows:
-                await message.answer("هیچ پلنی در پایگاه‌داده ثبت نشده است. در حال همگام‌سازی از Marzban...")
+                await message.answer("هیچ پلنی در پایگاه‌داده ثبت نشده است. ��ر حال همگام‌سازی از Marzban...")
                 changed = await sync_templates_to_plans(session)
                 if not changed:
                     await message.answer("همگام‌سازی انجام شد اما پلنی یافت نشد. لطفاً در Marzban حداقل یک Template فعال ایجاد کنید.")
