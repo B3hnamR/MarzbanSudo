@@ -10,6 +10,10 @@ from aiogram.types import Message
 from app.db.session import get_session, session_scope
 from app.logging_config import setup_logging
 from app.bot.handlers import plans as plans_handlers
+from app.bot.handlers import start as start_handlers
+from app.bot.handlers import account as account_handlers
+from app.bot.handlers import admin as admin_handlers
+from app.bot.handlers import orders as orders_handlers
 from app.bot.middlewares.rate_limit import RateLimitMiddleware
 
 try:
@@ -37,32 +41,12 @@ def _get_admin_ids() -> List[int]:
     return ids
 
 
-@router.message(CommandStart())
-async def handle_start(message: Message) -> None:
-    text = (
-        "به MarzbanSudo خوش آمدید!\n\n"
-        "- با دستور /plans پلن‌ها را ببینید.\n"
-        "- با دستور /orders سفارش‌های خود را مدیریت کنید.\n"
-        "- با دستور /account وضعیت اکانت و لینک‌ها را ببینید.\n"
-    )
-    await message.answer(text)
 
 
 
 
-@router.message(Command("account"))
-async def handle_account(message: Message) -> None:
-    # Placeholder: در فازهای بعدی از DB و sub4me/info تغذیه می‌شود
-    await message.answer("اطلاعات اکانت شما به‌زودی در دسترس خواهد بود.")
 
 
-@router.message(Command("admin"))
-async def handle_admin(message: Message) -> None:
-    admin_ids = _get_admin_ids()
-    if message.from_user and message.from_user.id in admin_ids:
-        await message.answer("پنل ادمین: به‌زودی دستورهای مدیریتی فعال می‌شوند.")
-    else:
-        await message.answer("شما دسترسی ادمین ندارید.")
 
 
 async def main() -> None:
@@ -86,7 +70,11 @@ async def main() -> None:
     dp.callback_query.middleware(rate_limiter)
 
     dp.include_router(router)
+    dp.include_router(start_handlers.router)
     dp.include_router(plans_handlers.router)
+    dp.include_router(account_handlers.router)
+    dp.include_router(admin_handlers.router)
+    dp.include_router(orders_handlers.router)
 
     # Polling startup
     logging.info("Starting Telegram bot polling ...")

@@ -148,3 +148,102 @@ Ops: Run on server:
 - Implement /orders flow with manual_transfer receipt, admin inline approval, and idempotent Provision.
 - Implement /account using sub4me/info with stored token and client-type links.
 - Scheduler: usage/expiry notifications, cleanup expireds, auto-cancel pending orders.
+
+---
+
+## 2025-08-28 – Ops: Auto-migrations on bot startup (Compose)
+
+- Edit: docker-compose.yml
+  - Added startup command to apply DB migrations before bot starts:
+    `command: sh -c "alembic upgrade head && python -m app.main"`
+
+Outcome: Tables are ensured to exist on first run; avoids runtime errors due to missing tables.
+
+---
+
+## 2025-08-28 – DB: session context manager and /plans refactor
+
+- New: app/db/session.py
+  - Added `session_scope()` async context manager.
+- Edit: app/main.py
+  - Switched /plans to use `session_scope()`.
+  - Fixed minor Unicode text issue in Persian message.
+
+Outcome: Cleaner session lifecycle and more readable code.
+
+---
+
+## 2025-08-28 – Feature: /plans auto-sync on empty DB
+
+- Edit: app/main.py
+  - If `plans` table is empty, auto-synchronize templates from Marzban and re-query.
+
+Outcome: First-time user experience improved; no manual `sync_plans` required.
+
+---
+
+## 2025-08-28 – Logging: structured JSON and safe file fallback
+
+- New: app/logging_config.py
+  - Structured JSON logging (or plain text) with env-based level and format.
+  - Console (stdout) handler always enabled.
+  - File handler (RotatingFileHandler) enabled only if path is writable; uses delayed open.
+- Edit: app/main.py
+  - Switched to `setup_logging()`.
+
+Outcome: No more file-permission crashes; logs visible in Compose and optionally persisted to ./logs.
+
+---
+
+## 2025-08-28 – Healthcheck: DB connectivity
+
+- Edit: app/healthcheck.py
+  - Added async DB SELECT 1 check using `DB_URL`.
+
+Outcome: Orchestrator (Compose) accurately detects readiness.
+
+---
+
+## 2025-08-28 – Tests: Smoke
+
+- New: tests/test_smoke.py
+  - Validates healthcheck import and presence of critical keys in `.env.example`.
+
+Outcome: Prevents basic regressions in CI/local runs.
+
+---
+
+## 2025-08-28 – Bot: Modular /plans handler and fixes
+
+- New: app/bot/handlers/plans.py
+  - Extracted /plans handler into a dedicated router module.
+- Edit: app/main.py
+  - Included `plans_handlers.router`.
+- Fix: Corrected a temporary syntax issue in `plans.py` during refactor.
+
+Outcome: Cleaner bot structure; ready to add more routers.
+
+---
+
+## 2025-08-28 – Middleware: Per-user rate limiting
+
+- New: app/bot/middlewares/rate_limit.py
+  - Simple per-user limiter (N messages per 60s; default 20 via `RATE_LIMIT_USER_MSG_PER_MIN`).
+- Edit: app/main.py
+  - Applied middleware to message and callback_query pipelines.
+
+Outcome: Spam mitigation; protects DB and external APIs.
+
+---
+
+## 2025-08-28 – Bot: Modular handlers (start/account/admin/orders) and scheduler scaffold
+
+- New: app/bot/handlers/start.py, account.py, admin.py, orders.py
+  - Moved inline handlers from main into dedicated router modules.
+- Edit: app/main.py
+  - Included new routers and cleaned inline handlers.
+- New: app/services/scheduler.py
+  - Initial scaffold with periodic jobs (sync_plans, notify_usage, notify_expiry) using aiojobs.
+  - Not wired into Compose yet.
+
+Outcome: Cleaner bot structure, ready for adding order flows and background jobs.

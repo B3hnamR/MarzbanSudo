@@ -243,7 +243,7 @@ Edge Cases
 - middlewares: auth/admin ACL، rate-limit per-user، logging/correlation-id
 - keyboards: inline با صفحات‌بندی؛ تایید/رد سفارش؛ بازگشت
 - filters: فقط ادمین، وضعیت کاربر
-- UX/متن‌ها: شفاف‌سازی تفاوت «تمدید (افزایش حجم)» و «پلن جدید (جایگزینی کامل)»؛ لینک‌ها ب�� اساس SUB_DOMAIN_PREFERRED
+- UX/متن‌ها: شفاف‌سازی تفاوت «تمدید (افزایش حجم)» و «پلن جدید (جایگزینی کامل)»؛ لینک‌ها بر اساس SUB_DOMAIN_PREFERRED
 
 ورودی‌های سفارش (manual_transfer)
 - مبلغ (auto از plan)، متن تراکنش (شماره پیگیری/کارت)، اسکرین‌شات اختیاری.
@@ -272,7 +272,7 @@ Edge Cases
 - UFW سخت‌گیرانه؛ Fail2ban روی SSH (اختیاری)
 - حذف اطلاعات حساس از لاگ‌ها؛ masking توکن‌ها؛ سطح لاگ production = INFO
 - سیاست نگهداری رسیدها: RECEIPT_RETENTION_DAYS و حذف دوره‌ای
-- GDPR/PII: ذخیره حداقلی داده‌ها، امکان purge کاربر در صورت درخواست
+- GDPR/PII: ذخیره حداقلی داده‌ها، ا��کان purge کاربر در صورت درخواست
 
 ---
 
@@ -332,7 +332,7 @@ docker compose up -d bot  # شامل اجرای ربات پس از مهاجرت
 10) فعال‌سازی Scheduler، backup cron و log rotation
 
 Rollback (بازگشت)
-- توقف سرویس، بازیابی آخرین backup DB، بازگردانی .env قبلی، start مجدد.
+- توقف سرویس، بازیابی آخرین backup DB، بازگردانی .env قب��ی، start مجدد.
 
 ---
 
@@ -422,3 +422,95 @@ PUT /api/user/tg_262182607 HTTP/1.1 (Authorization: Bearer <token>)
   - عمومی: https://irsub.fun/sub4me/{token}/
   - v2ray: https://irsub.fun/sub4me/{token}/v2ray
   - JSON:  https://irsub.fun/sub4me/{token}/v2ray-json
+
+---
+
+## 24) Feature Backlog & Categorization (v1)
+
+راهنما: ویژگی‌های دارای علامت ✅ جزء «MVP باید داشته باشد» هستند و در فازهای اولیه پیاده‌سازی می‌شوند. سایر موارد در فازهای بعدی برنامه‌ریزی می‌شوند.
+
+A) Commerce & Orders
+- ✅ VPN Purchase with Auto Configuration Creation
+- ✅ Fully Automated Configuration Creation (Provision)
+- ✅ Compatibility with All Protocols (سطح نمایش/لینک‌ها)
+- ✅ Mandatory Channel Membership for Purchases
+- ✅ Detailed Purchase and Trial Account Reports
+- ✅ Manage Purchased Services: Renewals, Additional Volume Purchases, Configuration Retrieval, Updating Service Links
+- 🎟️ Advanced Discount Code Management (فاز بعد)
+- 🛒 Bulk Purchase Options (فاز بعد)
+- 🔄 Renewal and Volume Purchases (Even for Non-Existing Services) (فاز بعد)
+- ⏳ Set Service Purchase Durations (MVP)
+- 📤 Send Configurations Directly After Payment (MVP)
+- 💱 Rial Exchange Payment Gateways (فاز بعد)
+
+B) User Accounts & Trials
+- ✅ View Purchased Services
+- ✅ Trial Accounts for Users
+- ✅ Verification via Phone Number
+- 🔑 Separate Panels for Test Accounts (فاز بعد)
+- 🆔 Multiple Username Creation Methods (MVP)
+- ✅ Admin-Specified Username Generation Methods
+
+C) Support & Content
+- ✅ User Support Section (Ticket/DM)
+- 📩 Support Messages with Admin Responses (تکمیل بعدی)
+- ✅ Tutorial Section with Admin-Customizable Content
+- ✅ FAQ Section
+- ✅ Text Customization from the Bot
+
+D) Admin, Access & Management
+- ✅ Balance Management via Admin Panel
+- ✅ Multiple Admin Support
+- 🔐 Admin Access Levels (Management, Sales, Support) (فاز بعد)
+- ✅ View and Manage All Users in the Bot
+- ✅ Product and Panel Management
+- ✅ Gateway Management (تعریف/وضعیت)
+- 🔗 Advanced Subset Management (فاز بعد)
+- 🖥️ Web Panel Integration (فاز بعد)
+
+E) Payments & Gateways
+- ✅ Card-to-Card (MVP)
+- ✅ NowPayments Gateway (فاز افزونه)
+- ✅ aqayepardakht Gateway (فاز افزونه)
+
+F) Panels & Provisioning
+- ✅ Configuration Settings Based on Protocols
+- ⚡ Advanced Panel-Specific Bandwidth Management (فاز بعد)
+- 🔄 Manage Panel Status (فاز بعد)
+- 🌍 Change Location of Services (فاز بعد)
+- 🔄 Transfer Services Between Users (فاز بعد)
+- ❌ Limit Configuration Creation per Panel (سیاست‌ها/Rate-limit سرویس) (فاز بعد)
+
+G) Inventory & Policy
+- 💳 Inventory Control (Set Minimum and Maximum Inventory Increases) (فاز بعد)
+- 📅 Advanced Cron Job Settings (Scheduler policies) (فاز بعد)
+
+H) Analytics & Search
+- 📊 Comprehensive Bot Statistics (فاز بعد)
+- 🔍 Quick Service Search (فاز بعد)
+
+I) Reseller & Subsets
+- 🤝 Reseller Support (فاز بعد)
+- 🔗 Advanced Subset Management (ذکر شده در D) (فاز بعد)
+
+Phase Mapping (خلاصه)
+- فاز 3–4 (MVP):
+  - ✅ Purchase & Provision (Card-to-Card)، Auto config، Compatibility Links
+  - ✅ View Services، Manage Services (Renew/Volume/Links) – سطح پایه
+  - ✅ Trials، Phone Verification، Mandatory Channel Membership
+  - ✅ Admin Panel basics: Balance, Multi-admin, Product & Panel Mgmt، Gateway Mgmt (تعریف)، Username rules
+  - ✅ Tutorial/FAQ/Text customization، Support Section (پایه)
+  - ⏳ Duration، 📤 Send config after payment
+- فاز 5: Scheduler & Policies
+  - اعلان‌ها، گزارش‌ها، Advanced Cron policies، auto-cancel، cleanup
+- فاز 6: امنیت/لاگ/مانیتورینگ/Analytics
+  - آمار بات، سرچ سریع، سطوح دسترسی ادمین، Limit per panel، Inventory policies
+- فاز 7+: افزونه‌های پرداخت، Reseller، Subsets، Web Panel، مدیریت پیشرفته پهنای‌باند، انتقال سرویس/تغییر مکان
+
+Acceptance per MVP (نمونه)
+- خرید و Provision خودکار، ارسال کانفیگ پس از پرداخت
+- مشاهده/تمدید/افزایش حجم سرویس‌ها، بازیابی لینک‌ها
+- تریال با محدودیت‌ها، احراز شماره تلفن، عضویت اجباری کانال
+- مدیریت پایه ادمین: موجودی، محصولات/پنل‌ها، گیت‌وی، چندادمینی
+- پشتیبانی (پیام کاربر و پاسخ ادمین)، محتوای راهنما/FAQ و سفارشی‌سازی متن‌ها
+
