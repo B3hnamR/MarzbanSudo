@@ -47,8 +47,22 @@ def setup_logging() -> None:
 
     logs_dir_default = os.path.join(os.getcwd(), "logs")
     log_file_path = os.getenv("LOG_FILE_PATH", os.path.join(logs_dir_default, "app.log"))
-    logs_dir_exists = os.path.isdir(os.path.dirname(log_file_path))
-    log_to_file = _bool(os.getenv("LOG_TO_FILE"), logs_dir_exists)
+
+    # Decide file logging based on env and actual writability
+    env_log_to_file = os.getenv("LOG_TO_FILE")
+    log_to_file_default = False
+    try:
+        log_dir = os.path.dirname(log_file_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        # Probe writability
+        with open(log_file_path, "a", encoding="utf-8"):
+            pass
+        log_to_file_default = True
+    except Exception:
+        log_to_file_default = False
+
+    log_to_file = _bool(env_log_to_file, log_to_file_default)
 
     # Formatters
     if log_format == "json":
@@ -64,7 +78,7 @@ def setup_logging() -> None:
         "console": {
             "class": "logging.StreamHandler",
             "level": log_level,
-            "stream": sys.stdout,
+            "stream": "ext://sys.stdout",
             "formatter": "json" if log_format == "json" else "plain",
         }
     }
@@ -82,6 +96,7 @@ def setup_logging() -> None:
             "maxBytes": 5 * 1024 * 1024,  # 5MB
             "backupCount": 3,
             "encoding": "utf-8",
+            "delay": True,
             "formatter": "json" if log_format == "json" else "plain",
         }
 
