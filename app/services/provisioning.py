@@ -67,7 +67,7 @@ async def provision_trial(telegram_id: int) -> dict:
         # Create if not exists; if exists, proceed to update
         exists = False
         try:
-            await client.create_user(**create_payload)  # type: ignore[arg-type]
+            resp = await client._request("POST", "/api/user", json=create_payload)
             logger.info("trial created (minimal)", extra={"extra": {"username": username}})
         except httpx.HTTPStatusError as e:
             if e.response is not None and e.response.status_code == 409:
