@@ -13,6 +13,7 @@ from app.marzban.client import get_client
 from app.db.session import get_session, session_scope
 from app.db.models import Plan
 from app.scripts.sync_plans import sync_templates_to_plans
+from app.logging_config import setup_logging
 
 try:
     # Optional: load .env in non-production environments
@@ -98,10 +99,7 @@ async def handle_admin(message: Message) -> None:
 
 
 async def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    )
+    setup_logging()
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
