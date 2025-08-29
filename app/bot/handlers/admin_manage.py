@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, Dict, List, Tuple
+import re
 
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -358,7 +359,7 @@ async def cb_aplans_setprice(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text.regexp(r"^\d{3,10}$") & F.from_user.id.in_(_APLANS_PRICE_INTENT))
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _APLANS_PRICE_INTENT and isinstance(getattr(m, "text", None), str) and re.match(r"^\d{3,10}$", m.text))
 async def admin_plan_price_input(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_SET_PRICE)):
         return
@@ -399,7 +400,7 @@ async def cb_aplans_create(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text & F.from_user.id.in_(_APLANS_CREATE_INTENT))
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _APLANS_CREATE_INTENT and isinstance(getattr(m, "text", None), str))
 async def admin_plan_create_steps(message: Message) -> None:
     uid = message.from_user.id if message.from_user else None
     # Capability check on every step
@@ -526,7 +527,7 @@ async def cb_aplans_edit_field(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text & F.from_user.id.in_(_APLANS_FIELD_INTENT))
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _APLANS_FIELD_INTENT and isinstance(getattr(m, "text", None), str))
 async def admin_plan_edit_steps(message: Message) -> None:
     uid = message.from_user.id if message.from_user else None
     if not await has_capability_async(uid, CAP_PLANS_EDIT):
