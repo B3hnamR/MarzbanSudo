@@ -52,8 +52,14 @@ async def admin_orders_pending(message: Message) -> None:
             await message.answer("سفارشی برای بررسی موجود نیست.")
             return
         for o, u, p in rows:
+            extra = []
+            if o.provider_ref:
+                extra.append(f"ref={o.provider_ref}")
+            if o.receipt_file_path:
+                extra.append("file=✓")
+            extra_str = f" | {' '.join(extra)}" if extra else ""
             text = (
-                f"Order #{o.id} | {o.status}\n"
+                f"Order #{o.id} | {o.status}{extra_str}\n"
                 f"User: {u.marzban_username} (tg:{u.telegram_id})\n"
                 f"Plan: {p.title} | Amount: {o.amount} {o.currency}\n"
                 f"Ref: {o.provider_ref or '-'} | Created: {o.created_at}"

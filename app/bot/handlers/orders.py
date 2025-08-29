@@ -5,7 +5,7 @@ from datetime import datetime
 
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
 from sqlalchemy import select
 
 from app.db.session import session_scope
@@ -115,7 +115,7 @@ async def handle_buy(message: Message) -> None:
             f"سفارش شما ایجاد شد. شناسه سفارش: #{order.id}\n"
             f"پلن: {plan.title}\n"
             f"مبلغ: {amount} {plan.currency}\n"
-            "برای ثبت رسید، عکس/فایل را با کپشن زیر ارسال کنید:\n"
+            "برای ثبت رسید، فقط عکس/فایل با کپشن زیر را ارسال کنید:\n"
             f"attach {order.id} <یادداشت اختیاری>"
         )
 
@@ -219,8 +219,10 @@ async def handle_attach_media(message: Message) -> None:
         return
     note = parts[2].strip() if len(parts) >= 3 else ""
     file_id = None
+    is_photo = False
     if message.photo:
         file_id = message.photo[-1].file_id
+        is_photo = True
     elif message.document:
         file_id = message.document.file_id
     if not file_id:
@@ -258,3 +260,23 @@ async def handle_attach_media(message: Message) -> None:
         )
         await session.commit()
         await message.answer("رسید ثبت شد و در صف بررسی ادمین قرار گرفت.")
+        # ارسال برای ادمین‌ها با دکمه‌های Approve/Reject
+        admin_raw = os.getenv("TELEGRAM_ADMIN_IDS", "")
+        admin_ids = [int(x.strip()) for x in admin_raw.split(",") if x.strip().isdigit()]
+        if admin_ids:
+            caption = (
+                f"رسید جدید\n"
+                f"Order: #{order.id} | {plan.title}\n"
+                f"User: {user.marzban_username} (tg:{user.telegram_id})\n"
+                f"Amount: {order.amount} {order.currency}\n"
+                f"Note: {note or '-'}\n"
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Approve ✅", callback_data=f"ord:approve:{order.id}"), InlineKeyboardButton(text="Reject ❌", callback_data=f"ord:reject:{order.id}")]])
+            for aid in admin_ids:
+                try:
+                    if is_photo:
+                        await message.bot.send_photo(chat_id=aid, photo=file_id, caption=caption, reply_markup=kb)
+                    else:
+                        await message.bot.send_document(chat_id=aid, document=file_id, caption=caption, reply_markup=kb)
+                except Exception:
+                    pass
