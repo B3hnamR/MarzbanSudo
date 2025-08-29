@@ -344,3 +344,90 @@ Outcome: Basic purchase flow scaffolded; ready to integrate receipt upload, admi
 - Edit: app/main.py – wired admin_orders router.
 
 Outcome: Manual payment flow end-to-end enabled (create → attach → admin approve → provision → notify).
+
+---
+
+## 2025-08-29 – Audit logging helper and admin orders hardening
+
+- New: app/services/audit.py – `log_audit()` helper for structured audit logs.
+- Edit: app/bot/handlers/admin_orders.py
+  - Added idempotency guards to Approve/Reject.
+  - Persisted `User.subscription_token` when available.
+  - Logged `order_paid`, `order_provisioned`, `order_rejected`.
+  - Displayed extra receipt hints (ref=..., file=✓) in pending cards.
+- Edit: app/bot/handlers/orders.py
+  - Logged `order_created` and receipt actions in earlier manual-payment flow (before wallet switch).
+
+Outcome: Safer admin actions, audit trail for critical operations, and clearer pending queue info.
+
+---
+
+## 2025-08-29 – Bot UI: Role-based keyboards and inline buttons
+
+- Edit: app/bot/handlers/start.py
+  - Role detection via TELEGRAM_ADMIN_IDS.
+  - ReplyKeyboard for user: 🛒 پلن‌ها، 📦 سفارش‌ها، 👤 اکانت.
+  - ReplyKeyboard for admin: موارد کاربر + 🧾 سفارش‌های در انتظار.
+  - Kept slash commands active but hidden from keyboards.
+- Edit: app/bot/handlers/plans.py
+  - Paginated inline listing with Buy buttons (plan:page, plan:buy callbacks).
+- Edit: app/bot/handlers/orders.py
+  - Initially added inline Attach/Replace buttons with confirm-replace flow and media receipts (photo/document), auto-forward to admins (later deprecated in favor of wallet-based top-ups).
+
+Outcome: Click-driven UX, no need to type slash commands, scalable pagination for plans.
+
+---
+
+## 2025-08-29 – Account formatting improvements
+
+- Edit: app/bot/handlers/account.py
+  - Two-decimal GB formatting for total/used/remaining.
+  - Added inline Refresh button (callback to be wired in subsequent phase).
+
+Outcome: Clearer account metrics formatting.
+
+---
+
+## 2025-08-29 – Wallet system: balances, top-ups, and balance-based purchases
+
+- DB & Migrations:
+  - Edit: app/db/models.py – added `User.balance`, new `WalletTopUp`, `Setting` models.
+  - New: app/db/migrations/versions/20250829_000002_wallet.py – add `users.balance`, create `wallet_topups` and `settings` tables (correct Alembic path).
+  - Note: an earlier wallet migration was accidentally created under `app/alembic/versions`; the effective migration is the one under `app/db/migrations/versions`.
+
+- Handlers (wallet): app/bot/handlers/wallet.py
+  - Wallet menu shows balance and default top-up options in Tomans (IRR/10 for display).
+  - Custom amount flow in Tomans (pure digits), internally converted to Rials.
+  - Photo/document-only receipts (no caption required) once amount is selected (intent-based).
+  - Auto-forward receipt media to admins with caption (TopUp ID, User, Amount in Tomans) and Approve/Reject buttons.
+  - Approve: credits user balance and notifies user with new balance (Tomans).
+  - Reject: edits admin caption with Rejected and notifies user that top-up was rejected (Tomans).
+  - Admin controls:
+    - `/admin_wallet_set_min <AMOUNT_IRR>` – set minimum top-up (stored in settings, in Rials).
+    - `/admin_wallet_balance <username>` – show balance (Tomans in output).
+    - `/admin_wallet_add <username> <amount_IRR>` – manual credit (Tomans shown in output, stored in Rials).
+  - Fixes and safeguards:
+    - Use `edit_caption` for media messages to avoid TelegramBadRequest.
+    - Guard against DB overflow on very large balances (block approve if sum exceeds Numeric(12,2) range).
+    - Fixed Persian text corruption for “رسید”.
+
+- Purchase flow (plans): app/bot/handlers/plans.py
+  - Wallet-aware Buy: if balance < price → prompt user to charge via 💳 کیف پول.
+  - If sufficient: deduct from balance, create order (status=paid→provisioned), provision via UI-safe flow, persist token when present, and send links.
+
+- Bootstrap:
+  - app/main.py – wired wallet router.
+
+Outcome: Users top-up their wallet with photo-only receipts (approved by admins) and purchase plans from balance without manual receipts.
+
+---
+
+## 2025-08-29 – Orders UI adjustments for wallet-centric flow
+
+- Edit: app/bot/handlers/orders.py
+  - Kept listing of recent orders for visibility.
+  - Deprecated manual payment receipt flow in favor of wallet top-ups (Attach/Replace no longer part of purchase path).
+
+Outcome: Simpler, robust purchase path with immediate provisioning on sufficient balance.
+
+---
