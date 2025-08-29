@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 import httpx
 
 from app.marzban.client import get_client
+from app.db.models import Plan
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,19 @@ async def add_data_gb(username: str, delta_gb: float) -> Dict[str, Any]:
         return await get_user(username)
     finally:
         await client.aclose()
+
+
+async def provision_for_plan(username: str, plan: Plan) -> Dict[str, Any]:
+    """Provision user for a given Plan using UI-safe flow.
+    - Ensure minimal user exists
+    - Set expire and data_limit based on plan
+    - Return current user snapshot
+    """
+    await create_user_minimal(username, note=f"order: {plan.title}")
+    # Plan fields are bytes and days
+    gb = (plan.data_limit_bytes or 0) / (1024 ** 3)
+    days = int(plan.duration_days or 0)
+    return await update_user_limits(username, gb, days)
 
 
 async def extend_expire(username: str, delta_days: int) -> Dict[str, Any]:

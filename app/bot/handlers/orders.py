@@ -5,6 +5,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy import select
+from datetime import datetime
 
 from app.db.session import session_scope
 from app.db.models import User, Plan, Order
@@ -92,5 +93,39 @@ async def handle_buy(message: Message) -> None:
             f"سفارش شما ایجاد شد. شناسه سفارش: #{order.id}\n"
             f"پلن: {plan.title}\n"
             f"مبلغ: {amount} {plan.currency}\n"
-            "لطفاً رسید پرداخت را برای ادمین ارسال کنید تا تایید و سرویس شما آماده شود."
+            "برای ثبت رسید، شماره پیگیری/توضیح را با فرمان زیر ارسال کنید:\n"
+            f"/attach {order.id} <ref>"
         )
+
+
+@router.message(Command("attach"))
+async def handle_attach(message: Message) -> None:
+    if not message.from_user or not message.text:
+        return
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer("فرمت: /attach <ORDER_ID> <ref>")
+        return
+    try:
+        order_id = int(parts[1])
+    except ValueError:
+        await message.answer("شناسه سفارش نامعتبر است.")
+        return
+    ref = parts[2].strip()
+    tg_id = message.from_user.id
+    async with session_scope() as session:
+        stmt = (
+            select(Order, User, Plan)
+            .join(User, Order.user_id == User.id)
+            .join(Plan, Order.plan_id == Plan.id)
+            .where(Order.id == order_id, User.telegram_id == tg_id)
+        )
+        row = (await session.execute(stmt)).first()
+        if not row:
+            await message.answer("سفارش یافت نشد.")
+            return
+        order, user, plan = row
+        order.provider_ref = ref
+        order.updated_at = datetime.utcnow()
+        await session.commit()
+        await message.answer("رسید ثبت شد و در صف بررسی ادمین قرار گرفت.")
