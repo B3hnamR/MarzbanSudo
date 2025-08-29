@@ -95,7 +95,7 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
     if not cb.from_user:
         await cb.answer()
         return
-    # Create order directly (same as /buy)
+    # Wallet-aware purchase
     async with session_scope() as session:
         plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
         if not plan:
@@ -111,24 +111,67 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
                 subscription_token=None,
                 status="active",
                 data_limit_bytes=0,
+                balance=0,
             )
             session.add(db_user)
             await session.flush()
-        order = Order(
-            user_id=db_user.id,
-            plan_id=plan.id,
-            status="pending",
-            amount=plan.price or 0,
-            currency=plan.currency,
-            provider="manual_transfer",
-        )
-        session.add(order)
-        await session.commit()
-        await cb.message.answer(
-            f"سفارش شما ایجاد شد. شناسه سفارش: #{order.id}\n"
-            f"پلن: {plan.title}\n"
-            f"مبلغ: {order.amount} {order.currency}\n"
-            "برای ثبت رسید، شماره پیگیری/توضیح را با فرمان زیر ارسال کنید:\n"
-            f"/attach {order.id} <ref>"
-        )
-    await cb.answer("ثبت شد")
+        price = plan.price or 0
+        balance = float(db_user.balance or 0)
+        if balance < float(price):
+            await cb.message.answer(
+                f"موجودی کافی نیست. قیمت پلن: {int(price):,} IRR، موجودی شما: {int(balance):,} IRR\n"
+                "از دکمه 💳 کیف پول برای شارژ استفاده کنید."
+            )
+            await cb.answer("Insufficient balance", show_alert=False)
+            return
+        # Enough balance → create order and auto-approve/provision
+        from app.services import marzban_ops as ops
+        from app.utils.username import tg_username as _tg
+        try:
+            # Create order record as paid/provisioned for traceability
+            order = Order(
+                user_id=db_user.id,
+                plan_id=plan.id,
+                status="paid",
+                amount=plan.price or 0,
+                currency=plan.currency,
+                provider="wallet",
+            )
+            session.add(order)
+            # Deduct balance
+            db_user.balance = balance - float(price)
+            await session.flush()
+            # Provision
+            info = await ops.provision_for_plan(db_user.marzban_username or _tg(tg_id), plan)
+            order.status = "provisioned"
+            order.paid_at = order.updated_at = order.provisioned_at = datetime.utcnow()
+            await session.commit()
+        except Exception:
+            await cb.message.answer("خطا در فعال‌سازی پلن. لطفاً مجدداً تلاش کنید یا به ادمین اطلاع دهید.")
+            await cb.answer()
+            return
+        # Notify
+        try:
+            sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
+            token = None
+            if isinstance(info, dict):
+                sub_url = info.get("subscription_url", "")
+                token = sub_url.rstrip("/").split("/")[-1] if sub_url else None
+                if token:
+                    db_user.subscription_token = token
+            lines = [
+                "خرید با موفقیت از کیف پول انجام شد.",
+                f"پلن: {plan.title}",
+                f"مبلغ کسرشده: {int(price):,} IRR",
+                f"موجودی جدید: {int(db_user.balance or 0):,} IRR",
+            ]
+            if token and sub_domain:
+                lines += [
+                    f"لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
+                    f"v2ray: https://{sub_domain}/sub4me/{token}/v2ray",
+                    f"JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
+                ]
+            await cb.message.answer("\n".join(lines))
+        except Exception:
+            pass
+        await cb.answer("Purchased")

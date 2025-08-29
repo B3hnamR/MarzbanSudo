@@ -10,6 +10,7 @@ from app.bot.handlers.plans import handle_plans as plans_handler
 from app.bot.handlers.orders import handle_orders as orders_handler
 from app.bot.handlers.account import handle_account as account_handler
 from app.bot.handlers.admin_orders import admin_orders_pending as admin_pending_handler
+from app.bot.handlers.wallet import wallet_menu as wallet_menu_handler
 
 router = Router()
 
@@ -32,7 +33,7 @@ def _user_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌ها")],
-            [KeyboardButton(text="👤 اکانت")],
+            [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="💳 کیف پول")],
         ], resize_keyboard=True
     )
 
@@ -41,7 +42,8 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌ها")],
-            [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="🧾 سفارش‌های در انتظار")],
+            [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="💳 کیف پول")],
+            [KeyboardButton(text="🧾 سفارش‌های در انتظار")],
         ], resize_keyboard=True
     )
 
@@ -76,6 +78,11 @@ async def _btn_orders(message: Message) -> None:
 @router.message(F.text == "👤 اکانت")
 async def _btn_account(message: Message) -> None:
     await account_handler(message)
+
+
+@router.message(F.text == "💳 کیف پول")
+async def _btn_wallet(message: Message) -> None:
+    await wallet_menu_handler(message)
 
 
 @router.message(F.text == "🧾 سفارش‌های در انتظار")

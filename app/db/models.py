@@ -26,6 +26,8 @@ class User(Base):
     last_notified_usage_threshold: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
     last_notified_expiry_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
+    balance: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -65,6 +67,29 @@ class Order(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     provisioned_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class WalletTopUp(Base):
+    __tablename__ = "wallet_topups"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    amount: Mapped[Optional[float]] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(8), default="IRR")
+    status: Mapped[str] = mapped_column(String(32), index=True, default="pending")
+    receipt_file_id: Mapped[str] = mapped_column(String(255))
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    admin_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(191), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Transaction(Base):
