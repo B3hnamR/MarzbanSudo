@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.db.session import session_scope
 from app.db.models import Order, User, Plan
 from app.services import marzban_ops as ops
+from app.services.audit import log_audit
 from app.utils.username import tg_username
 
 router = Router()
@@ -86,28 +87,35 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
             await cb.answer("Order not found", show_alert=True)
             return
         order, user, plan = row
+        # Idempotency guard
+        if order.status in ("paid", "provisioned"):
+            await cb.answer("Already processed", show_alert=True)
+            return
         # Mark as paid
         order.status = "paid"
         order.paid_at = datetime.utcnow()
+        await log_audit(session, actor="admin", action="order_paid", target_type="order", target_id=order.id, meta=str({"by": cb.from_user.id if cb.from_user else None}))
         await session.flush()
         # Provision in Marzban (UI-safe)
         username = user.marzban_username or tg_username(user.telegram_id)
         try:
             info = await ops.provision_for_plan(username, plan)
-        except Exception as e:
+        except Exception:
             await cb.answer("Provision failed", show_alert=True)
             return
+        # Persist token if available
+        sub_url = info.get("subscription_url", "") if isinstance(info, dict) else ""
+        token = _token_from_subscription_url(sub_url)
+        if token:
+            user.subscription_token = token
         # Mark provisioned
         order.status = "provisioned"
         order.provisioned_at = datetime.utcnow()
+        await log_audit(session, actor="system", action="order_provisioned", target_type="order", target_id=order.id, meta=str({"user": user.id, "plan": plan.id}))
         await session.commit()
     # Notify user with links
     try:
-        sub_url = info.get("subscription_url", "") if isinstance(info, dict) else ""
-        token = _token_from_subscription_url(sub_url)
-        lines = [
-            "سفارش شما تایید و سرویس فعال شد.",
-        ]
+        lines = ["سفارش شما تایید و سرویس فعال شد."]
         sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
         if token and sub_domain:
             lines += [
@@ -134,8 +142,12 @@ async def cb_reject_order(cb: CallbackQuery) -> None:
         if not order:
             await cb.answer("Order not found", show_alert=True)
             return
+        if order.status in ("failed", "provisioned"):
+            await cb.answer("Already processed", show_alert=True)
+            return
         order.status = "failed"
         order.updated_at = datetime.utcnow()
+        await log_audit(session, actor="admin", action="order_rejected", target_type="order", target_id=order.id, meta=str({"by": cb.from_user.id if cb.from_user else None}))
         await session.commit()
     await cb.message.edit_text(cb.message.text + "\n\nRejected ❌")
     await cb.answer("Rejected")
