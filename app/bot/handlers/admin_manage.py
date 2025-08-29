@@ -4,7 +4,6 @@ import os
 from typing import Any, Dict, List, Tuple
 
 from aiogram import Router, F
-from aiogram.exceptions import SkipHandler
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select, func
@@ -337,7 +336,8 @@ async def cb_aplans_toggle(cb: CallbackQuery) -> None:
             return
         row.is_active = not bool(row.is_active)
         await session.commit()
-    await admin_show_plans_menu(cb.message, page=page_num)
+    if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
+        await admin_show_plans_menu(cb.message, page=page_num)
     await cb.answer("اعمال شد")
 
 
@@ -358,13 +358,11 @@ async def cb_aplans_setprice(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text.regexp(r"^\d{3,10}$"))
+@router.message(F.text.regexp(r"^\d{3,10}$") & F.from_user.id.in_(_APLANS_PRICE_INTENT))
 async def admin_plan_price_input(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_SET_PRICE)):
-        raise SkipHandler
+        return
     uid = message.from_user.id
-    if uid not in _APLANS_PRICE_INTENT:
-        raise SkipHandler
     tpl_id, page_num = _APLANS_PRICE_INTENT.pop(uid)
     try:
         toman = int(message.text)
@@ -382,7 +380,8 @@ async def admin_plan_price_input(message: Message) -> None:
         row.price = irr
         await session.commit()
     await message.answer(f"قیمت پلن تنظیم شد: {toman:,} تومان")
-    await admin_show_plans_menu(message, page=page_num)
+    if await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE):
+        await admin_show_plans_menu(message, page=page_num)
 
 
 # Create Plan flow (step-by-step)
@@ -400,11 +399,9 @@ async def cb_aplans_create(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text)
+@router.message(F.text & F.from_user.id.in_(_APLANS_CREATE_INTENT))
 async def admin_plan_create_steps(message: Message) -> None:
     uid = message.from_user.id if message.from_user else None
-    if not uid or uid not in _APLANS_CREATE_INTENT:
-        raise SkipHandler
     # Capability check on every step
     if not await has_capability_async(uid, CAP_PLANS_CREATE):
         _APLANS_CREATE_INTENT.pop(uid, None)
@@ -529,11 +526,9 @@ async def cb_aplans_edit_field(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text)
+@router.message(F.text & F.from_user.id.in_(_APLANS_FIELD_INTENT))
 async def admin_plan_edit_steps(message: Message) -> None:
     uid = message.from_user.id if message.from_user else None
-    if not uid or uid not in _APLANS_FIELD_INTENT:
-        raise SkipHandler
     if not await has_capability_async(uid, CAP_PLANS_EDIT):
         _APLANS_FIELD_INTENT.pop(uid, None)
         await message.answer("شما دسترسی ادمین ندارید.")
@@ -573,7 +568,8 @@ async def admin_plan_edit_steps(message: Message) -> None:
             await message.answer("ورودی نامعتبر است. عملیات لغو شد.")
             return
     await message.answer("ویرایش انجام شد.")
-    await admin_show_plans_menu(message, page=page_num)
+    if await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE):
+        await admin_show_plans_menu(message, page=page_num)
 
 
 @router.callback_query(F.data.startswith("aplans:delete:"))
@@ -635,5 +631,6 @@ async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
         await cb.message.edit_text((cb.message.text or "حذف پلن") + "\n\nحذف شد ✅")
     except Exception:
         pass
-    await admin_show_plans_menu(cb.message, page=page_num)
+    if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
+        await admin_show_plans_menu(cb.message, page=page_num)
     await cb.answer("حذف شد")
