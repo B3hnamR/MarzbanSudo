@@ -4,8 +4,8 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from aiogram import Router
-from aiogram.filters import Command, Text
+from aiogram import Router, F
+from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select
 
@@ -66,7 +66,7 @@ async def admin_orders_pending(message: Message) -> None:
             await message.answer(text, reply_markup=kb)
 
 
-@router.callback_query(Text(startswith="ord:approve:"))
+@router.callback_query(F.data.startswith("ord:approve:"))
 async def cb_approve_order(cb: CallbackQuery) -> None:
     try:
         order_id = int(cb.data.split(":")[2]) if cb.data else 0
@@ -122,7 +122,7 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
     await cb.answer("Approved")
 
 
-@router.callback_query(Text(startswith="ord:reject:"))
+@router.callback_query(F.data.startswith("ord:reject:"))
 async def cb_reject_order(cb: CallbackQuery) -> None:
     try:
         order_id = int(cb.data.split(":")[2]) if cb.data else 0
