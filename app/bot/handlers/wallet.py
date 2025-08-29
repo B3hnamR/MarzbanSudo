@@ -15,6 +15,15 @@ from app.services.audit import log_audit
 
 router = Router()
 
+
+def _admin_ids() -> set[int]:
+    raw = os.getenv("TELEGRAM_ADMIN_IDS", "")
+    return {int(x.strip()) for x in raw.split(",") if x.strip().isdigit()}
+
+
+def _is_admin_user_id(uid: int | None) -> bool:
+    return bool(uid and uid in _admin_ids())
+
 # In-memory intent storage (per-process)
 _TOPUP_INTENT: Dict[int, Decimal] = {}
 
@@ -161,6 +170,9 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
     if not cb.from_user:
         await cb.answer()
         return
+    if not _is_admin_user_id(cb.from_user.id):
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        return
     try:
         topup_id = int(cb.data.split(":")[2])
     except Exception:
@@ -204,6 +216,9 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
 async def cb_wallet_reject(cb: CallbackQuery) -> None:
     if not cb.from_user:
         await cb.answer()
+        return
+    if not _is_admin_user_id(cb.from_user.id):
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         topup_id = int(cb.data.split(":")[2])
