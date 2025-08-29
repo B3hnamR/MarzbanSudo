@@ -6,12 +6,12 @@ from typing import Any, Dict, List, Tuple
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.utils.username import tg_username
 from app.services import marzban_ops as ops
 from app.db.session import session_scope
-from app.db.models import Plan
+from app.db.models import Plan, Order
 from app.services.security import (
     has_capability_async,
     CAP_PLANS_MANAGE,
@@ -447,7 +447,7 @@ async def admin_plan_create_steps(message: Message) -> None:
     if step == "price":
         try:
             tmn = int(message.text.strip())
-            if tmn < 0:
+            if tmn <= 0:
                 raise ValueError
         except Exception:
             await message.answer("مبلغ نامعتبر است. یک عدد صحیح ارسال کنید.")
@@ -561,7 +561,7 @@ async def admin_plan_edit_steps(message: Message) -> None:
                 row.duration_days = days
             elif field == "price":
                 tmn = int(message.text.strip())
-                if tmn < 0:
+                if tmn <= 0:
                     raise ValueError
                 row.price = tmn * 10
             else:
@@ -608,6 +608,10 @@ async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
     if decision == "no":
+        try:
+            await cb.message.edit_text((cb.message.text or "عملیات حذف") + "\n\nلغو شد ❌")
+        except Exception:
+            pass
         await cb.answer("لغو شد")
         return
     async with session_scope() as session:
@@ -615,8 +619,20 @@ async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
         if not row:
             await cb.answer("پلن یافت نشد", show_alert=True)
             return
+        # Prevent delete when orders reference this plan
+        cnt = await session.scalar(select(func.count()).select_from(Order).where(Order.plan_id == row.id))
+        if cnt and int(cnt) > 0:
+            try:
+                await cb.message.edit_text((cb.message.text or "حذف پلن") + "\n\nحذف ممکن نیست: به این پلن سفارش مرتبط وجود دارد. لطفاً به‌جای حذف، پلن را غیرفعال کنید.")
+            except Exception:
+                pass
+            await cb.answer("دارای سفارش فعال/قدیمی", show_alert=True)
+            return
         await session.delete(row)
         await session.commit()
-    await cb.message.answer("پلن حذف شد.")
+    try:
+        await cb.message.edit_text((cb.message.text or "حذف پلن") + "\n\nحذف شد ✅")
+    except Exception:
+        pass
     await admin_show_plans_menu(cb.message, page=page_num)
     await cb.answer("حذف شد")
