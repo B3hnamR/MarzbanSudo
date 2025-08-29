@@ -49,7 +49,10 @@ async def _send_plans_page(message: Message, page: int) -> None:
         buttons = []
         for p in subset:
             lines.append("- " + _plan_text(p))
-            buttons.append([InlineKeyboardButton(text=f"خرید {p.template_id}", callback_data=f"plan:buy:{p.template_id}")])
+            price_irr = int(p.price or 0)
+            label_price = f" - {price_irr//10:,} تومان" if price_irr > 0 else " - قیمت‌گذاری نشده"
+            btn_text = f"خرید {p.title}{label_price}"
+            buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"plan:buy:{p.template_id}")])
         nav = []
         if page > 1:
             nav.append(InlineKeyboardButton(text="◀️ قبلی", callback_data=f"plan:page:{page-1}"))
