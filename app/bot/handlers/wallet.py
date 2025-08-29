@@ -78,7 +78,7 @@ async def handle_wallet_custom_amount(message: Message) -> None:
         return
     rial = toman * Decimal("10")
     _TOPUP_INTENT[message.from_user.id] = rial
-    await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس ر��ید پرداخت را ارسال کنید.")
+    await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس رسید پرداخت را ارسال کنید.")
 
 
 @router.callback_query(F.data.startswith("wallet:amt:"))
@@ -177,8 +177,15 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
         if topup.status != "pending":
             await cb.answer("Already processed", show_alert=True)
             return
-        # Update balance and topup
-        user.balance = (Decimal(user.balance or 0) + Decimal(topup.amount or 0))
+        # Update balance and topup (guard against DB overflow)
+        current = Decimal(user.balance or 0)
+        add = Decimal(topup.amount or 0)
+        new_balance = current + add
+        max_irr = Decimal("9999999999.99")
+        if new_balance > max_irr:
+            await cb.answer("مبلغ کل از سقف مجاز عبور می‌کند. امکان تایید این شارژ نیست.", show_alert=True)
+            return
+        user.balance = new_balance
         topup.status = "approved"
         topup.admin_id = admin_id
         topup.processed_at = datetime.utcnow()
@@ -205,10 +212,14 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
         return
     admin_id = cb.from_user.id
     async with session_scope() as session:
-        topup = await session.scalar(select(WalletTopUp).where(WalletTopUp.id == topup_id))
-        if not topup:
+        row = await session.execute(
+            select(WalletTopUp, User).join(User, WalletTopUp.user_id == User.id).where(WalletTopUp.id == topup_id)
+        )
+        data = row.first()
+        if not data:
             await cb.answer("TopUp not found", show_alert=True)
             return
+        topup, user = data
         if topup.status != "pending":
             await cb.answer("Already processed", show_alert=True)
             return
@@ -217,6 +228,10 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
         topup.processed_at = datetime.utcnow()
         await log_audit(session, actor="admin", action="wallet_topup_rejected", target_type="wallet_topup", target_id=topup.id, meta=str({"admin_id": admin_id}))
         await session.commit()
+    try:
+        await cb.message.bot.send_message(chat_id=user.telegram_id, text=f"درخواست شارژ شما رد شد. مبلغ: {int((topup.amount or 0)/10):,} تومان")
+    except Exception:
+        pass
     cap = cb.message.caption or "درخواست شارژ کیف پول"
     await cb.message.edit_caption(cap + "\n\nRejected ❌")
     await cb.answer("Rejected")
@@ -264,7 +279,7 @@ async def admin_wallet_balance(message: Message) -> None:
         if not user:
             await message.answer("کاربر یافت نشد.")
             return
-        await message.answer(f"موجودی {username}: {int(user.balance or 0):,} IRR")
+        await message.answer(f"موجودی {username}: {int((user.balance or 0)/10):,} تومان")
 
 
 @router.message(F.text.startswith("/admin_wallet_add "))
@@ -291,4 +306,4 @@ async def admin_wallet_add(message: Message) -> None:
         user.balance = (Decimal(user.balance or 0) + amount)
         await log_audit(session, actor="admin", action="wallet_manual_add", target_type="user", target_id=user.id, meta=str({"amount": str(amount)}))
         await session.commit()
-    await message.answer(f"اضافه شد. موجودی جدید {username}: {int(user.balance):,} IRR")
+    await message.answer(f"اضافه شد. موجودی جدید {username}: {int((user.balance or 0)/10):,} تومان")
