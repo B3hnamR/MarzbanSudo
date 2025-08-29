@@ -328,3 +328,19 @@ Outcome: Direct Marzban management from Telegram bot without leaving the chat.
 - Uses ORM via session_scope and existing models (User, Plan, Order).
 
 Outcome: Basic purchase flow scaffolded; ready to integrate receipt upload, admin approval, and idempotent provision next.
+
+---
+
+## 2025-08-29 – Orders: receipt attach and admin approval with provision
+
+- Edit: app/bot/handlers/orders.py
+  - /attach <ORDER_ID> <ref>: user submits payment reference; saved to provider_ref.
+- New: app/bot/handlers/admin_orders.py
+  - /admin_orders_pending: list pending orders with inline Approve/Reject buttons.
+  - Approve: marks paid, provisions user via UI-safe flow (provision_for_plan), marks provisioned, and notifies the user with links.
+  - Reject: marks order as failed with timestamp.
+- Edit: app/services/marzban_ops.py
+  - Added provision_for_plan(username, plan) to provision based on Plan (bytes/days) using UI-safe flow.
+- Edit: app/main.py – wired admin_orders router.
+
+Outcome: Manual payment flow end-to-end enabled (create → attach → admin approve → provision → notify).
