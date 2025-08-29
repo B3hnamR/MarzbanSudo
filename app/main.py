@@ -17,6 +17,7 @@ from app.bot.handlers import admin_manage as admin_manage_handlers
 from app.bot.handlers import orders as orders_handlers
 from app.bot.handlers import admin_orders as admin_orders_handlers
 from app.bot.handlers import trial as trial_handlers
+from app.bot.handlers import wallet as wallet_handlers
 from app.bot.middlewares.rate_limit import RateLimitMiddleware
 
 try:
@@ -81,6 +82,7 @@ async def main() -> None:
     dp.include_router(orders_handlers.router)
     dp.include_router(admin_orders_handlers.router)
     dp.include_router(trial_handlers.router)
+    dp.include_router(wallet_handlers.router)
 
     # Polling startup
     logging.info("Starting Telegram bot polling ...")

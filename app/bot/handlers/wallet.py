@@ -48,12 +48,37 @@ async def wallet_menu(message: Message) -> None:
         min_amt = await _get_min_topup(session)
         options = _amount_options(min_amt)
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"شارژ {int(a):,} IRR", callback_data=f"wallet:amt:{int(a)}")] for a in options
-        ])
+            [InlineKeyboardButton(text=f"شارژ {int(a/10):,} تومان", callback_data=f"wallet:amt:{int(a)}")] for a in options
+        ] + [[InlineKeyboardButton(text="مبلغ دلخواه", callback_data="wallet:custom")]])
         await message.answer(
-            f"موجودی کیف پول شما: {bal:.0f} IRR\nبرای شارژ یکی از مبالغ زیر را انتخاب کنید.",
+            f"موجودی کیف پول شما: {int(bal/10):,} تومان\nیکی از مبالغ زیر را انتخاب کنید یا مبلغ دلخواه را وارد کنید.",
             reply_markup=kb,
         )
+
+
+@router.callback_query(F.data == "wallet:custom")
+async def cb_wallet_custom(cb: CallbackQuery) -> None:
+    await cb.message.answer("مبلغ دلخواه را به تومان ارسال کنید (مثلاً 76000 برای ۷۶۰۰۰ تومان).")
+    _TOPUP_INTENT[cb.from_user.id] = Decimal("-1")
+    await cb.answer()
+
+
+@router.message(F.text.regexp(r"^\d{4,10}$"))
+async def handle_wallet_custom_amount(message: Message) -> None:
+    if not message.from_user:
+        return
+    if message.from_user.id not in _TOPUP_INTENT or _TOPUP_INTENT[message.from_user.id] != Decimal("-1"):
+        return
+    try:
+        toman = Decimal(message.text)
+        if toman <= 0:
+            raise ValueError
+    except Exception:
+        await message.answer("مبلغ نامعتبر است. دوباره ارسال کنید.")
+        return
+    rial = toman * Decimal("10")
+    _TOPUP_INTENT[message.from_user.id] = rial
+    await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس ر��ید پرداخت را ارسال کنید.")
 
 
 @router.callback_query(F.data.startswith("wallet:amt:"))
@@ -68,7 +93,7 @@ async def cb_wallet_amount(cb: CallbackQuery) -> None:
         return
     _TOPUP_INTENT[cb.from_user.id] = amount
     await cb.message.answer(
-        f"مبلغ {int(amount):,} IRR انتخاب شد.\nلطفاً عکس رسید پرداخت را ارسال کنید (بدون نیاز به متن)."
+        f"مبلغ {int(amount/10):,} تومان انتخاب شد.\nلطفاً عکس رسید پرداخت را ارسال کنید (بدون نیاز به متن)."
     )
     await cb.answer()
 
