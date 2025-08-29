@@ -179,12 +179,45 @@ async def list_expired() -> List[Dict[str, Any]]:
 
 
 async def delete_expired() -> Dict[str, Any]:
+    """Delete expired users.
+
+    Behavior:
+      - Try bulk DELETE /api/users/expired
+      - If 404 (endpoint missing), fallback to GET list and DELETE each user
+      - Return a summary dict
+    """
     client = await get_client()
     try:
-        resp = await client._request("DELETE", "/api/users/expired")
         try:
-            return resp.json()
-        except Exception:
-            return {"status": resp.status_code}
+            resp = await client._request("DELETE", "/api/users/expired")
+            # Prefer JSON if available
+            try:
+                data = resp.json()
+                return data if isinstance(data, dict) else {"status": resp.status_code}
+            except Exception:
+                return {"status": resp.status_code}
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code if e.response is not None else None
+            if status != 404:
+                raise
+            # Fallback: list then delete individually
+            try:
+                lst_resp = await client._request("GET", "/api/users/expired")
+                items = lst_resp.json()
+                users = items if isinstance(items, list) else items.get("result", [])
+                usernames = [u.get("username") for u in users if isinstance(u, dict) and u.get("username")]
+            except Exception:
+                usernames = []
+            if not usernames:
+                return {"deleted": 0, "failed": 0, "bulk": False, "reason": "not_found"}
+            deleted = 0
+            failed = 0
+            for u in usernames:
+                try:
+                    await client._request("DELETE", f"/api/user/{u}")
+                    deleted += 1
+                except Exception:
+                    failed += 1
+            return {"deleted": deleted, "failed": failed, "bulk": False}
     finally:
         await client.aclose()
