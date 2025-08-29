@@ -61,9 +61,7 @@ async def update_user_limits(username: str, data_limit_gb: int | float, duration
     try:
         expire_ts = int((datetime.now(timezone.utc) + timedelta(days=duration_days)).timestamp()) if duration_days > 0 else 0
         data_limit = int(float(data_limit_gb) * (1024 ** 3)) if data_limit_gb and data_limit_gb > 0 else 0
-        # set expire
         await client.update_user(username, {"expire": expire_ts})
-        # set data_limit
         await client.update_user(username, {"data_limit": data_limit})
         resp = await client._request("GET", f"/api/user/{username}")
         return resp.json()
@@ -102,5 +100,91 @@ async def get_user(username: str) -> Dict[str, Any]:
     try:
         resp = await client._request("GET", f"/api/user/{username}")
         return resp.json()
+    finally:
+        await client.aclose()
+
+
+async def get_user_summary(username: str) -> Dict[str, Any]:
+    data = await get_user(username)
+    def gb(v: int | None) -> str:
+        if not v or v <= 0:
+            return "∞"
+        return f"{v / (1024**3):.2f} GB"
+    data_limit = int(data.get("data_limit") or 0)
+    used = int(data.get("used_traffic") or 0)
+    remaining = max(data_limit - used, 0) if data_limit > 0 else 0
+    return {
+        "username": data.get("username"),
+        "status": data.get("status"),
+        "expire": data.get("expire"),
+        "data_limit": data_limit,
+        "used_traffic": used,
+        "remaining": remaining,
+        "subscription_url": data.get("subscription_url", ""),
+        "links": data.get("links", []),
+        "summary_text": (
+            f"user: {data.get('username')}\n"
+            f"status: {data.get('status')}\n"
+            f"limit: {gb(data_limit)}\n"
+            f"used: {gb(used)}\n"
+            f"remaining: {gb(remaining)}\n"
+        ),
+    }
+
+
+async def set_status(username: str, status: str) -> Dict[str, Any]:
+    client = await get_client()
+    try:
+        await client.update_user(username, {"status": status})
+        return await get_user(username)
+    finally:
+        await client.aclose()
+
+
+async def add_data_gb(username: str, delta_gb: float) -> Dict[str, Any]:
+    current = await get_user(username)
+    current_limit = int(current.get("data_limit") or 0)
+    add_bytes = int(float(delta_gb) * (1024 ** 3))
+    new_limit = (current_limit if current_limit > 0 else 0) + add_bytes
+    client = await get_client()
+    try:
+        await client.update_user(username, {"data_limit": new_limit})
+        return await get_user(username)
+    finally:
+        await client.aclose()
+
+
+async def extend_expire(username: str, delta_days: int) -> Dict[str, Any]:
+    current = await get_user(username)
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    current_exp = int(current.get("expire") or 0)
+    base = current_exp if current_exp and current_exp > 0 else now_ts
+    new_exp = base + delta_days * 86400
+    client = await get_client()
+    try:
+        await client.update_user(username, {"expire": new_exp})
+        return await get_user(username)
+    finally:
+        await client.aclose()
+
+
+async def list_expired() -> List[Dict[str, Any]]:
+    client = await get_client()
+    try:
+        resp = await client._request("GET", "/api/users/expired")
+        data = resp.json()
+        return data if isinstance(data, list) else data.get("result", [])
+    finally:
+        await client.aclose()
+
+
+async def delete_expired() -> Dict[str, Any]:
+    client = await get_client()
+    try:
+        resp = await client._request("DELETE", "/api/users/expired")
+        try:
+            return resp.json()
+        except Exception:
+            return {"status": resp.status_code}
     finally:
         await client.aclose()

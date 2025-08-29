@@ -121,3 +121,114 @@ async def admin_set(message: Message) -> None:
         await message.answer("اعمال شد.")
     except Exception as e:
         await message.answer(f"خطا در admin_set: {e}")
+
+
+@router.message(Command("admin_get"))
+async def admin_get(message: Message) -> None:
+    if not _require_admin(message):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    parts = message.text.split(maxsplit=1) if message.text else []
+    if len(parts) != 2:
+        await message.answer("فرمت: /admin_get <username>")
+        return
+    username = parts[1].strip()
+    try:
+        info = await ops.get_user_summary(username)
+        await message.answer(info["summary_text"])
+        if info.get("subscription_url"):
+            await message.answer(info["subscription_url"])
+    except Exception as e:
+        await message.answer(f"خطا در admin_get: {e}")
+
+
+@router.message(Command("admin_status"))
+async def admin_status(message: Message) -> None:
+    if not _require_admin(message):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    parts = message.text.split()
+    if len(parts) != 3:
+        await message.answer("فرمت: /admin_status <username> <active|disabled|on_hold>")
+        return
+    username = parts[1].strip()
+    status = parts[2].strip()
+    try:
+        await ops.set_status(username, status)
+        await message.answer("اعمال شد.")
+    except Exception as e:
+        await message.answer(f"خطا در admin_status: {e}")
+
+
+@router.message(Command("admin_addgb"))
+async def admin_addgb(message: Message) -> None:
+    if not _require_admin(message):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    parts = message.text.split()
+    if len(parts) != 3:
+        await message.answer("فرمت: /admin_addgb <username> <GB>")
+        return
+    username = parts[1].strip()
+    try:
+        gb = float(parts[2])
+    except ValueError:
+        await message.answer("مقدار GB نامعتبر است.")
+        return
+    try:
+        await ops.add_data_gb(username, gb)
+        await message.answer("اعمال شد.")
+    except Exception as e:
+        await message.answer(f"خطا در admin_addgb: {e}")
+
+
+@router.message(Command("admin_extend"))
+async def admin_extend(message: Message) -> None:
+    if not _require_admin(message):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    parts = message.text.split()
+    if len(parts) != 3:
+        await message.answer("فرمت: /admin_extend <username> <DAYS>")
+        return
+    username = parts[1].strip()
+    try:
+        days = int(parts[2])
+    except ValueError:
+        await message.answer("مقدار DAYS نامعتبر است.")
+        return
+    try:
+        await ops.extend_expire(username, days)
+        await message.answer("اعمال شد.")
+    except Exception as e:
+        await message.answer(f"خطا در admin_extend: {e}")
+
+
+@router.message(Command("admin_list_expired"))
+async def admin_list_expired(message: Message) -> None:
+    if not _require_admin(message):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    try:
+        rows = await ops.list_expired()
+        if not rows:
+            await message.answer("موردی یافت نشد.")
+            return
+        lines = []
+        for r in rows[:20]:
+            lines.append(f"- {r.get('username')} | status={r.get('status')} | expire={r.get('expire')}")
+        await message.answer("Expired users (first 20):\n" + "\n".join(lines))
+    except Exception as e:
+        await message.answer(f"خطا در admin_list_expired: {e}")
+
+
+@router.message(Command("admin_delete_expired"))
+async def admin_delete_expired(message: Message) -> None:
+    if not _require_admin(message):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    try:
+        res = await ops.delete_expired()
+        await message.answer(f"Deleted expired: {res}")
+    except Exception as e:
+        await message.answer(f"خطا در admin_delete_expired: {e}")
