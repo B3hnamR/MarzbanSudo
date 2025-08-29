@@ -143,7 +143,7 @@ async def handle_wallet_photo(message: Message) -> None:
             f"درخواست شارژ کیف پول\n"
             f"TopUp ID: {topup.id}\n"
             f"User: {user.marzban_username} (tg:{user.telegram_id})\n"
-            f"Amount: {int(amount):,} IRR\n"
+            f"Amount: {int(amount/10):,} تومان\n"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Approve ✅", callback_data=f"wallet:approve:{topup.id}"), InlineKeyboardButton(text="Reject ❌", callback_data=f"wallet:reject:{topup.id}")]])
         for aid in admin_ids:
@@ -185,10 +185,11 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
         await log_audit(session, actor="admin", action="wallet_topup_approved", target_type="wallet_topup", target_id=topup.id, meta=str({"admin_id": admin_id}))
         await session.commit()
     try:
-        await cb.message.bot.send_message(chat_id=user.telegram_id, text=f"شارژ شما تایید شد. موجودی جدید: {int(user.balance):,} IRR")
+        await cb.message.bot.send_message(chat_id=user.telegram_id, text=f"شارژ شما تایید شد. موجودی جدید: {int((user.balance or 0)/10):,} تومان")
     except Exception:
         pass
-    await cb.message.edit_text(cb.message.caption + "\n\nApproved ✅")
+    cap = cb.message.caption or "درخواست شارژ کیف پول"
+    await cb.message.edit_caption(cap + "\n\nApproved ✅")
     await cb.answer("Approved")
 
 
@@ -216,7 +217,8 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
         topup.processed_at = datetime.utcnow()
         await log_audit(session, actor="admin", action="wallet_topup_rejected", target_type="wallet_topup", target_id=topup.id, meta=str({"admin_id": admin_id}))
         await session.commit()
-    await cb.message.edit_text(cb.message.caption + "\n\nRejected ❌")
+    cap = cb.message.caption or "درخواست شارژ کیف پول"
+    await cb.message.edit_caption(cap + "\n\nRejected ❌")
     await cb.answer("Rejected")
 
 
