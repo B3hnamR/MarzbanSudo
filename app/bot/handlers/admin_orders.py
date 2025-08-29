@@ -24,6 +24,12 @@ def _is_admin(message: Message) -> bool:
     return bool(message.from_user and message.from_user.id in ids)
 
 
+def _is_admin_uid(uid: int | None) -> bool:
+    raw = os.getenv("TELEGRAM_ADMIN_IDS", "").strip()
+    ids = {int(x.strip()) for x in raw.split(",") if x.strip().isdigit()}
+    return bool(uid and uid in ids)
+
+
 def _token_from_subscription_url(url: Optional[str]) -> Optional[str]:
     if not url:
         return None
@@ -75,6 +81,12 @@ async def admin_orders_pending(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("ord:approve:"))
 async def cb_approve_order(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    if not _is_admin_uid(cb.from_user.id):
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        return
     try:
         order_id = int(cb.data.split(":")[2]) if cb.data else 0
     except Exception:
@@ -138,6 +150,12 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("ord:reject:"))
 async def cb_reject_order(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    if not _is_admin_uid(cb.from_user.id):
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        return
     try:
         order_id = int(cb.data.split(":")[2]) if cb.data else 0
     except Exception:

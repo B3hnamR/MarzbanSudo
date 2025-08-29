@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from datetime import datetime
 from typing import List
 
 from aiogram import Router, F
@@ -26,14 +28,17 @@ def _plan_text(p: Plan) -> str:
     else:
         limit_str = "نامحدود"
     dur_str = f"{p.duration_days}d" if p.duration_days and p.duration_days > 0 else "بدون محدودیت زمانی"
-    return f"{p.title} (ID: {p.template_id}) | حجم: {limit_str} | مدت: {dur_str}"
+    price_irr = int(p.price or 0)
+    price_tmn = price_irr // 10
+    price_str = f"{price_tmn:,} تومان" if price_irr > 0 else "قیمت‌گذاری نشده"
+    return f"{p.title} (ID: {p.template_id}) | حجم: {limit_str} | مدت: {dur_str} | قیمت: {price_str}"
 
 
 async def _send_plans_page(message: Message, page: int) -> None:
     async with session_scope() as session:
         all_plans = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
         if not all_plans:
-            await message.answer("هیچ پلن�� موجود نیست.")
+            await message.answer("هیچ پلنی موجود نیست.")
             return
         total = len(all_plans)
         pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
@@ -115,11 +120,17 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
             )
             session.add(db_user)
             await session.flush()
-        price = plan.price or 0
-        balance = float(db_user.balance or 0)
-        if balance < float(price):
+        price_irr = int(plan.price or 0)
+        if price_irr <= 0:
+            await cb.message.answer("قیمت این پلن هنوز تنظیم نشده است. لطفاً از ادمین بخواهید قیمت را مشخص کند.")
+            await cb.answer("Price not set", show_alert=True)
+            return
+        balance_irr = int(db_user.balance or 0)
+        if balance_irr < price_irr:
             await cb.message.answer(
-                f"موجودی کافی نیست. قیمت پلن: {int(price):,} IRR، موجودی شما: {int(balance):,} IRR\n"
+                f"موجودی کافی نیست.\n"
+                f"قیمت پلن: {price_irr//10:,} تومان\n"
+                f"موجودی شما: {balance_irr//10:,} تومان\n"
                 "از دکمه 💳 کیف پول برای شارژ استفاده کنید."
             )
             await cb.answer("Insufficient balance", show_alert=False)
@@ -133,13 +144,13 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
                 user_id=db_user.id,
                 plan_id=plan.id,
                 status="paid",
-                amount=plan.price or 0,
+                amount=price_irr,
                 currency=plan.currency,
                 provider="wallet",
             )
             session.add(order)
             # Deduct balance
-            db_user.balance = balance - float(price)
+            db_user.balance = balance_irr - price_irr
             await session.flush()
             # Provision
             info = await ops.provision_for_plan(db_user.marzban_username or _tg(tg_id), plan)
@@ -162,8 +173,8 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
             lines = [
                 "خرید با موفقیت از کیف پول انجام شد.",
                 f"پلن: {plan.title}",
-                f"مبلغ کسرشده: {int(price):,} IRR",
-                f"موجودی جدید: {int(db_user.balance or 0):,} IRR",
+                f"مبلغ کسرشده: {price_irr//10:,} تومان",
+                f"موجودی جدید: {int((db_user.balance or 0))//10:,} تومان",
             ]
             if token and sub_domain:
                 lines += [

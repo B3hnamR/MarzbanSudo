@@ -10,6 +10,7 @@ from app.bot.handlers.plans import handle_plans as plans_handler
 from app.bot.handlers.orders import handle_orders as orders_handler
 from app.bot.handlers.account import handle_account as account_handler
 from app.bot.handlers.admin_orders import admin_orders_pending as admin_pending_handler
+from app.bot.handlers.admin_manage import admin_show_plans_menu as admin_plans_menu_handler
 from app.bot.handlers.wallet import wallet_menu as wallet_menu_handler
 
 router = Router()
@@ -44,6 +45,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌ها")],
             [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="💳 کیف پول")],
             [KeyboardButton(text="🧾 سفارش‌های در انتظار")],
+            [KeyboardButton(text="⚙️ مدیریت پلن‌ها")],
         ], resize_keyboard=True
     )
 
@@ -89,3 +91,8 @@ async def _btn_wallet(message: Message) -> None:
 async def _btn_admin_pending(message: Message) -> None:
     # admin_orders_pending has its own admin check
     await admin_pending_handler(message)
+
+
+@router.message(F.text == "⚙️ مدیریت پلن‌ها")
+async def _btn_admin_plans_manage(message: Message) -> None:
+    await admin_plans_menu_handler(message)
