@@ -5,7 +5,7 @@ from datetime import datetime
 
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select
 
 from app.db.session import session_scope
@@ -42,11 +42,27 @@ async def handle_orders(message: Message) -> None:
             amount = f"{o.amount} {o.currency}" if o.amount is not None else "-"
             lines.append(f"- #{o.id} | {o.status} | {p.title} | {amount} | {o.created_at}")
         await message.answer("آخرین سفارش‌ها:\n" + "\n".join(lines))
-        # نمایش دکمه Attach برای سفارش‌های pending
+        # نمایش دکمه Attach/Replace برای سفارش‌های در انتظار
         for o, p in rows:
             if o.status == "pending":
-                kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Attach رسید", callback_data=f"ord:attach:{o.id}")]])
-                await message.answer(f"Order #{o.id} | {p.title} | status: {o.status}", reply_markup=kb)
+                has_receipt = bool(o.provider_ref or o.receipt_file_path)
+                btn_text = "Replace رسید" if has_receipt else "Attach رسید"
+                cb_data = (
+                    f"ord:attach:replace:{o.id}" if has_receipt else f"ord:attach:{o.id}"
+                )
+                extra = []
+                if o.provider_ref:
+                    extra.append(f"ref={o.provider_ref}")
+                if o.receipt_file_path:
+                    extra.append("file=✓")
+                suffix = (" (" + ", ".join(extra) + ")") if extra else ""
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[[InlineKeyboardButton(text=btn_text, callback_data=cb_data)]]
+                )
+                await message.answer(
+                    f"Order #{o.id} | {p.title} | status: {o.status}{suffix}",
+                    reply_markup=kb,
+                )
 
 
 @router.message(Command("buy"))
@@ -101,9 +117,9 @@ async def handle_buy(message: Message) -> None:
             f"سفارش شما ایجاد شد. شناسه سفارش: #{order.id}\n"
             f"پلن: {plan.title}\n"
             f"مبلغ: {amount} {plan.currency}\n"
-            "برای ثبت رسید، شماره پیگیری/توضیح را با فرمان زیر ارسال کنید:\n"
-            f"/attach {order.id} <ref>\n"
-            "یا یک عکس/فایل با کپشن 'attach {order_id} <ref>' ارسال کنید."
+            "برای ثبت رسید، یکی از روش‌های زیر را انجام دهید:\n"
+            f"- ارسال متن: /attach {order.id} <ref>\n"
+            f"- ارسال عکس/فایل با کپشن: attach {order.id} <ref>"
         )
 
 
@@ -134,6 +150,12 @@ async def handle_attach(message: Message) -> None:
             await message.answer("سفارش یافت نشد.")
             return
         order, user, plan = row
+        if order.provider_ref or order.receipt_file_path:
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="تایید جایگزینی رسید", callback_data=f"ord:attach:confirm_replace:{order.id}")]]
+            )
+            await message.answer("برای این سفارش قبلاً رسید ثبت شده است. برای جایگزینی، دک��ه زیر را بزنید.", reply_markup=kb)
+            return
         order.provider_ref = ref
         order.updated_at = datetime.utcnow()
         await log_audit(session, actor="user", action="order_attach_ref", target_type="order", target_id=order.id, meta=str({"ref": ref}))
@@ -141,8 +163,58 @@ async def handle_attach(message: Message) -> None:
         await message.answer("رسید ثبت شد و در صف بررسی ادمین قرار گرفت.")
 
 
-@router.callback_query(F.data.startswith("ord:attach:"))
-async def cb_order_attach(cb):
+@router.callback_query(F.data.startswith("ord:attach:replace:"))
+async def cb_order_attach_replace(cb: CallbackQuery) -> None:
+    try:
+        order_id = int(cb.data.split(":")[-1]) if cb.data else 0
+    except Exception:
+        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        return
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="تایید جایگزینی", callback_data=f"ord:attach:confirm_replace:{order_id}")]]
+    )
+    await cb.message.answer("برای این سفارش رسید قبلاً ثبت شده است. با تایید جایگزینی، رسید قبلی پاک می‌شود و می‌توانید مجدد ارسال کنید.", reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("ord:attach:confirm_replace:"))
+async def cb_order_attach_confirm_replace(cb: CallbackQuery) -> None:
+    try:
+        order_id = int(cb.data.split(":")[-1]) if cb.data else 0
+    except Exception:
+        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        return
+    if not cb.from_user:
+        await cb.answer()
+        return
+    tg_id = cb.from_user.id
+    async with session_scope() as session:
+        row = (
+            await session.execute(
+                select(Order, User)
+                .join(User, Order.user_id == User.id)
+                .where(Order.id == order_id, User.telegram_id == tg_id)
+            )
+        ).first()
+        if not row:
+            await cb.answer("Order not found", show_alert=True)
+            return
+        order, user = row
+        order.provider_ref = None
+        order.receipt_file_path = None
+        order.updated_at = datetime.utcnow()
+        await log_audit(session, actor="user", action="order_attach_clear", target_type="order", target_id=order.id)
+        await session.commit()
+    await cb.message.answer(
+        "رسید قبلی حذف شد. برای ثبت رسید جدید یکی از روش‌های زیر را انجام دهید:\n"
+        f"- ارسال متن: /attach {order_id} <ref>\n"
+        f"- ارسال عکس/فایل با کپشن: attach {order_id} <ref>"
+    )
+    await cb.answer("Cleared")
+
+
+@router.callback_query(F.data.startswith("ord:attach:") & (~F.data.contains(":replace:")) & (~F.data.contains(":confirm_replace:")))
+async def cb_order_attach(cb: CallbackQuery) -> None:
     try:
         order_id = int(cb.data.split(":")[2]) if cb.data else 0
     except Exception:
@@ -189,6 +261,12 @@ async def handle_attach_media(message: Message) -> None:
             await message.answer("سفارش یافت نشد.")
             return
         order, user, plan = row
+        if order.provider_ref or order.receipt_file_path:
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="تایید جایگزینی رسید", callback_data=f"ord:attach:confirm_replace:{order.id}")]]
+            )
+            await message.answer("برای این سفارش قبلاً رسید ثبت شده است. برای جایگزینی، دکمه زیر را بزنید.", reply_markup=kb)
+            return
         order.provider_ref = ref
         if file_id:
             order.receipt_file_path = file_id
