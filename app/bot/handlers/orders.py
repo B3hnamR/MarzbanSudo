@@ -42,17 +42,15 @@ async def handle_orders(message: Message) -> None:
             amount = f"{o.amount} {o.currency}" if o.amount is not None else "-"
             lines.append(f"- #{o.id} | {o.status} | {p.title} | {amount} | {o.created_at}")
         await message.answer("آخرین سفارش‌ها:\n" + "\n".join(lines))
-        # نمایش دکمه Attach/Replace برای سفارش‌های در انتظار
+        # نمایش دکمه Attach/Replace برای سفارش‌های در انتظار (فقط عکس/فایل)
         for o, p in rows:
             if o.status == "pending":
-                has_receipt = bool(o.provider_ref or o.receipt_file_path)
+                has_receipt = bool(o.receipt_file_path)
                 btn_text = "Replace رسید" if has_receipt else "Attach رسید"
                 cb_data = (
                     f"ord:attach:replace:{o.id}" if has_receipt else f"ord:attach:{o.id}"
                 )
                 extra = []
-                if o.provider_ref:
-                    extra.append(f"ref={o.provider_ref}")
                 if o.receipt_file_path:
                     extra.append("file=✓")
                 suffix = (" (" + ", ".join(extra) + ")") if extra else ""
@@ -117,50 +115,27 @@ async def handle_buy(message: Message) -> None:
             f"سفارش شما ایجاد شد. شناسه سفارش: #{order.id}\n"
             f"پلن: {plan.title}\n"
             f"مبلغ: {amount} {plan.currency}\n"
-            "برای ثبت رسید، یکی از روش‌های زیر را انجام دهید:\n"
-            f"- ارسال متن: /attach {order.id} <ref>\n"
-            f"- ارسال عکس/فایل با کپشن: attach {order.id} <ref>"
+            "برای ثبت رسید، عکس/فایل را با کپشن زیر ارسال کنید:\n"
+            f"attach {order.id} <یادداشت اختیاری>"
         )
 
 
 @router.message(F.text.startswith("/attach "))
-async def handle_attach(message: Message) -> None:
-    if not message.from_user or not message.text:
-        return
+async def handle_attach_text_only(message: Message) -> None:
+    # رسید متنی مجاز نیست؛ راهنمای ارسال عکس/فایل
     parts = message.text.split(maxsplit=2)
-    if len(parts) < 3:
-        await message.answer("فرمت: /attach <ORDER_ID> <ref>")
+    if len(parts) < 2:
+        await message.answer("فرمت: /attach <ORDER_ID> (اما لطفاً عکس/فایل با کپشن attach <ORDER_ID> ارسال کنید)")
         return
     try:
         order_id = int(parts[1])
     except ValueError:
         await message.answer("شناسه سفارش نامعتبر است.")
         return
-    ref = parts[2].strip()
-    tg_id = message.from_user.id
-    async with session_scope() as session:
-        stmt = (
-            select(Order, User, Plan)
-            .join(User, Order.user_id == User.id)
-            .join(Plan, Order.plan_id == Plan.id)
-            .where(Order.id == order_id, User.telegram_id == tg_id)
-        )
-        row = (await session.execute(stmt)).first()
-        if not row:
-            await message.answer("سفارش یافت نشد.")
-            return
-        order, user, plan = row
-        if order.provider_ref or order.receipt_file_path:
-            kb = InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="تایید جایگزینی رسید", callback_data=f"ord:attach:confirm_replace:{order.id}")]]
-            )
-            await message.answer("برای این سفارش قبلاً رسید ثبت شده است. برای جایگزینی، دک��ه زیر را بزنید.", reply_markup=kb)
-            return
-        order.provider_ref = ref
-        order.updated_at = datetime.utcnow()
-        await log_audit(session, actor="user", action="order_attach_ref", target_type="order", target_id=order.id, meta=str({"ref": ref}))
-        await session.commit()
-        await message.answer("رسید ثبت شد و در صف بررسی ادمین قرار گرفت.")
+    await message.answer(
+        "برای ثبت رسید فقط عکس/فایل ارسال کنید و از کپشن زیر استفاده کنید:\n"
+        f"attach {order_id} <یادداشت اختیاری>"
+    )
 
 
 @router.callback_query(F.data.startswith("ord:attach:replace:"))
@@ -173,7 +148,10 @@ async def cb_order_attach_replace(cb: CallbackQuery) -> None:
     kb = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="تایید جایگزینی", callback_data=f"ord:attach:confirm_replace:{order_id}")]]
     )
-    await cb.message.answer("برای این سفارش رسید قبلاً ثبت شده است. با تایید جایگزینی، رسید قبلی پاک می‌شود و می‌توانید مجدد ارسال کنید.", reply_markup=kb)
+    await cb.message.answer(
+        "برای این سفارش رسید قبلاً ثبت شده است. با تایید جایگزینی، رسید قبلی پاک می‌شود و می‌توانید مجدد ارسال کنید.",
+        reply_markup=kb,
+    )
     await cb.answer()
 
 
@@ -206,9 +184,8 @@ async def cb_order_attach_confirm_replace(cb: CallbackQuery) -> None:
         await log_audit(session, actor="user", action="order_attach_clear", target_type="order", target_id=order.id)
         await session.commit()
     await cb.message.answer(
-        "رسید قبلی حذف شد. برای ثبت رسید جدید یکی از روش‌های زیر را انجام دهید:\n"
-        f"- ارسال متن: /attach {order_id} <ref>\n"
-        f"- ارسال عکس/فایل با کپشن: attach {order_id} <ref>"
+        "رسید قبلی حذف شد. لطفاً عکس/فایل را با کپشن زیر ارسال کنید:\n"
+        f"attach {order_id} <یادداشت اختیاری>"
     )
     await cb.answer("Cleared")
 
@@ -221,9 +198,8 @@ async def cb_order_attach(cb: CallbackQuery) -> None:
         await cb.answer("شناسه نامعتبر است", show_alert=True)
         return
     await cb.message.answer(
-        "برای ثبت رسید یکی از روش‌های زیر را انجام دهید:\n"
-        f"- ارسال متن: /attach {order_id} <ref>\n"
-        f"- ارسال عکس/فایل با کپشن: attach {order_id} <ref>"
+        "برای ثبت رسید فقط عکس/فایل ارسال کنید و از کپشن زیر استفاده کنید:\n"
+        f"attach {order_id} <یادداشت اختیاری>"
     )
     await cb.answer()
 
@@ -233,21 +209,23 @@ async def handle_attach_media(message: Message) -> None:
     if not message.from_user or not message.caption:
         return
     parts = message.caption.split(maxsplit=2)
-    if len(parts) < 3:
-        await message.answer("فرمت کپشن: attach <ORDER_ID> <ref>")
+    if len(parts) < 2:
+        await message.answer("فرمت کپشن: attach <ORDER_ID> <یادداشت اختیاری>")
         return
     try:
         order_id = int(parts[1])
     except ValueError:
         await message.answer("شناسه سفارش نامعتبر است.")
         return
-    ref = parts[2].strip()
-    # extract file_id
+    note = parts[2].strip() if len(parts) >= 3 else ""
     file_id = None
     if message.photo:
         file_id = message.photo[-1].file_id
     elif message.document:
         file_id = message.document.file_id
+    if not file_id:
+        await message.answer("فقط عکس یا فایل را ارسال کنید.")
+        return
     tg_id = message.from_user.id
     async with session_scope() as session:
         stmt = (
@@ -261,16 +239,22 @@ async def handle_attach_media(message: Message) -> None:
             await message.answer("سفارش یافت نشد.")
             return
         order, user, plan = row
-        if order.provider_ref or order.receipt_file_path:
+        if order.receipt_file_path:
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text="تایید جایگزینی رسید", callback_data=f"ord:attach:confirm_replace:{order.id}")]]
             )
             await message.answer("برای این سفارش قبلاً رسید ثبت شده است. برای جایگزینی، دکمه زیر را بزنید.", reply_markup=kb)
             return
-        order.provider_ref = ref
-        if file_id:
-            order.receipt_file_path = file_id
+        order.provider_ref = note or None
+        order.receipt_file_path = file_id
         order.updated_at = datetime.utcnow()
-        await log_audit(session, actor="user", action="order_attach_media", target_type="order", target_id=order.id, meta=str({"file_id": file_id}))
+        await log_audit(
+            session,
+            actor="user",
+            action="order_attach_media",
+            target_type="order",
+            target_id=order.id,
+            meta=str({"file_id": file_id, "note": note}),
+        )
         await session.commit()
         await message.answer("رسید ثبت شد و در صف بررسی ادمین قرار گرفت.")
