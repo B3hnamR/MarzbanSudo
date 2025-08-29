@@ -317,3 +317,14 @@ Outcome: Trial creation is stable, UI remains healthy, and /trial + /account ver
 - Edit: app/main.py – included admin_manage router
 
 Outcome: Direct Marzban management from Telegram bot without leaving the chat.
+
+---
+
+## 2025-08-29 – Orders (MVP): /buy and /orders (DB-backed)
+
+- Edit: app/bot/handlers/orders.py
+  - /buy <TEMPLATE_ID>: creates a pending order for the selected plan; auto-creates user record if missing (tg_<telegram_id>).
+  - /orders: lists last 10 orders for the user with status, plan title, amount and created_at.
+- Uses ORM via session_scope and existing models (User, Plan, Order).
+
+Outcome: Basic purchase flow scaffolded; ready to integrate receipt upload, admin approval, and idempotent provision next.
