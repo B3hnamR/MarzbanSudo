@@ -4,6 +4,7 @@ import os
 from typing import Any, Dict, List, Tuple
 
 from aiogram import Router, F
+from aiogram.exceptions import SkipHandler
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select, func
@@ -360,10 +361,10 @@ async def cb_aplans_setprice(cb: CallbackQuery) -> None:
 @router.message(F.text.regexp(r"^\d{3,10}$"))
 async def admin_plan_price_input(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_SET_PRICE)):
-        return
+        raise SkipHandler
     uid = message.from_user.id
     if uid not in _APLANS_PRICE_INTENT:
-        return
+        raise SkipHandler
     tpl_id, page_num = _APLANS_PRICE_INTENT.pop(uid)
     try:
         toman = int(message.text)
@@ -380,7 +381,7 @@ async def admin_plan_price_input(message: Message) -> None:
             return
         row.price = irr
         await session.commit()
-    await message.answer(f"قیمت پلن تنظیم ش��: {toman:,} تومان")
+    await message.answer(f"قیمت پلن تنظیم شد: {toman:,} تومان")
     await admin_show_plans_menu(message, page=page_num)
 
 
@@ -403,7 +404,7 @@ async def cb_aplans_create(cb: CallbackQuery) -> None:
 async def admin_plan_create_steps(message: Message) -> None:
     uid = message.from_user.id if message.from_user else None
     if not uid or uid not in _APLANS_CREATE_INTENT:
-        return
+        raise SkipHandler
     # Capability check on every step
     if not await has_capability_async(uid, CAP_PLANS_CREATE):
         _APLANS_CREATE_INTENT.pop(uid, None)
@@ -442,7 +443,7 @@ async def admin_plan_create_steps(message: Message) -> None:
             return
         ctx["days"] = days
         ctx["step"] = "price"
-        await message.answer("قیمت را ��ه تومان ارسال کنید (عدد صحیح؛ مثلاً 150000)")
+        await message.answer("قیمت را به تومان ارسال کنید (عدد صحیح؛ مثلاً 150000)")
         return
     if step == "price":
         try:
@@ -532,7 +533,7 @@ async def cb_aplans_edit_field(cb: CallbackQuery) -> None:
 async def admin_plan_edit_steps(message: Message) -> None:
     uid = message.from_user.id if message.from_user else None
     if not uid or uid not in _APLANS_FIELD_INTENT:
-        return
+        raise SkipHandler
     if not await has_capability_async(uid, CAP_PLANS_EDIT):
         _APLANS_FIELD_INTENT.pop(uid, None)
         await message.answer("شما دسترسی ادمین ندارید.")
