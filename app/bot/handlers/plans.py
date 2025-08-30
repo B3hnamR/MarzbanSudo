@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from decimal import Decimal
 from datetime import datetime
 from typing import List
 
@@ -28,8 +29,8 @@ def _plan_text(p: Plan) -> str:
     else:
         limit_str = "نامحدود"
     dur_str = f"{p.duration_days}d" if p.duration_days and p.duration_days > 0 else "بدون محدودیت زمانی"
-    price_irr = int(p.price or 0)
-    price_tmn = price_irr // 10
+    price_irr = Decimal(str(p.price or 0))
+    price_tmn = int(price_irr / Decimal("10"))
     price_str = f"{price_tmn:,} تومان" if price_irr > 0 else "قیمت‌گذاری نشده"
     return f"{p.title} (ID: {p.template_id}) | حجم: {limit_str} | مدت: {dur_str} | قیمت: {price_str}"
 
@@ -49,8 +50,8 @@ async def _send_plans_page(message: Message, page: int) -> None:
         buttons = []
         for p in subset:
             lines.append("- " + _plan_text(p))
-            price_irr = int(p.price or 0)
-            label_price = f" - {price_irr//10:,} تومان" if price_irr > 0 else " - قیمت‌گذاری نشده"
+            price_irr = Decimal(str(p.price or 0))
+            label_price = f" - {int(price_irr/Decimal('10')):,} تومان" if price_irr > 0 else " - قیمت‌گذاری نشده"
             btn_text = f"خرید {p.title}{label_price}"
             buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"plan:buy:{p.template_id}")])
         nav = []
@@ -120,12 +121,12 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
             )
             session.add(db_user)
             await session.flush()
-        price_irr = int(plan.price or 0)
+        price_irr = Decimal(str(plan.price or 0))
         if price_irr <= 0:
             await cb.message.answer("قیمت این پلن هنوز تنظیم نشده است. لطفاً از ادمین بخواهید قیمت را مشخص کند.")
             await cb.answer("Price not set", show_alert=True)
             return
-        balance_irr = int(db_user.balance or 0)
+        balance_irr = Decimal(str(db_user.balance or 0))
         if balance_irr < price_irr:
             await cb.message.answer(
                 f"موجودی کافی نیست.\n"
@@ -156,6 +157,14 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
             info = await ops.provision_for_plan(db_user.marzban_username or _tg(tg_id), plan)
             order.status = "provisioned"
             order.paid_at = order.updated_at = order.provisioned_at = datetime.utcnow()
+            # Extract and persist subscription token if available
+            token = None
+            if isinstance(info, dict):
+                sub_url = info.get("subscription_url", "")
+                token = sub_url.rstrip("/").split("/")[-1] if sub_url else None
+                if token:
+                    db_user.subscription_token = token
+            # Commit all changes atomically
             await session.commit()
         except Exception:
             await cb.message.answer("خطا در فعال‌سازی پلن. لطفاً مجدداً تلاش کنید یا به ادمین اطلاع دهید.")
@@ -164,17 +173,11 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
         # Notify
         try:
             sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
-            token = None
-            if isinstance(info, dict):
-                sub_url = info.get("subscription_url", "")
-                token = sub_url.rstrip("/").split("/")[-1] if sub_url else None
-                if token:
-                    db_user.subscription_token = token
             lines = [
                 "خرید با موفقیت از کیف پول انجام شد.",
                 f"پلن: {plan.title}",
-                f"مبلغ کسرشده: {price_irr//10:,} تومان",
-                f"موجودی جدید: {int((db_user.balance or 0))//10:,} تومان",
+                f"مبلغ کسرشده: {int(price_irr/Decimal('10')):,} تومان",
+                f"موجودی جدید: {int(Decimal(str(db_user.balance or 0))/Decimal('10')):,} تومان",
             ]
             if token and sub_domain:
                 lines += [

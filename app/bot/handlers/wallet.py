@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from app.db.session import session_scope
 from app.db.models import User, WalletTopUp, Setting
 from app.services.audit import log_audit
+from app.services.security import has_capability_async, CAP_WALLET_MODERATE
 
 router = Router()
 
@@ -170,7 +171,7 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
     if not cb.from_user:
         await cb.answer()
         return
-    if not _is_admin_user_id(cb.from_user.id):
+    if not await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE):
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
@@ -179,32 +180,58 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
     admin_id = cb.from_user.id
+    new_balance_for_msg: int | None = None
+    user_telegram_id: int | None = None
     async with session_scope() as session:
-        row = await session.execute(select(WalletTopUp, User).join(User, WalletTopUp.user_id == User.id).where(WalletTopUp.id == topup_id))
+        row = await session.execute(
+            select(WalletTopUp, User).join(User, WalletTopUp.user_id == User.id).where(WalletTopUp.id == topup_id)
+        )
         data = row.first()
         if not data:
             await cb.answer("TopUp not found", show_alert=True)
             return
         topup, user = data
-        if topup.status != "pending":
+        # Ensure pending -> approved transition is atomic
+        res = await session.execute(
+            update(WalletTopUp)
+            .where(WalletTopUp.id == topup_id, WalletTopUp.status == "pending")
+            .values(status="approved", admin_id=admin_id, processed_at=datetime.utcnow())
+            .execution_options(synchronize_session=False)
+        )
+        if (res.rowcount or 0) == 0:
             await cb.answer("Already processed", show_alert=True)
             return
-        # Update balance and topup (guard against DB overflow)
-        current = Decimal(user.balance or 0)
+        # Guard overflow and update balance atomically
         add = Decimal(topup.amount or 0)
-        new_balance = current + add
         max_irr = Decimal("9999999999.99")
-        if new_balance > max_irr:
+        await session.execute(
+            update(User).where(User.id == user.id).values(balance=User.balance + add).execution_options(synchronize_session=False)
+        )
+        # Read back for cap check and messaging
+        new_bal = await session.scalar(select(User.balance).where(User.id == user.id))
+        if new_bal and Decimal(new_bal) > max_irr:
+            # revert changes
+            await session.rollback()
+            await session.execute(
+                update(WalletTopUp)
+                .where(WalletTopUp.id == topup_id, WalletTopUp.status == "approved")
+                .values(status="pending", admin_id=None, processed_at=None)
+                .execution_options(synchronize_session=False)
+            )
+            await session.commit()
             await cb.answer("مبلغ کل از سقف مجاز عبور می‌کند. امکان تایید این شارژ نیست.", show_alert=True)
             return
-        user.balance = new_balance
-        topup.status = "approved"
-        topup.admin_id = admin_id
-        topup.processed_at = datetime.utcnow()
         await log_audit(session, actor="admin", action="wallet_topup_approved", target_type="wallet_topup", target_id=topup.id, meta=str({"admin_id": admin_id}))
+        # Prepare messaging values
+        user_telegram_id = user.telegram_id
+        try:
+            new_balance_for_msg = int((Decimal(new_bal or 0) / Decimal("10")).to_integral_value())
+        except Exception:
+            new_balance_for_msg = None
         await session.commit()
     try:
-        await cb.message.bot.send_message(chat_id=user.telegram_id, text=f"شارژ شما تایید شد. موجودی جدید: {int((user.balance or 0)/10):,} تومان")
+        if user_telegram_id is not None and new_balance_for_msg is not None:
+            await cb.message.bot.send_message(chat_id=user_telegram_id, text=f"شارژ شما تایید شد. موجودی جدید: {new_balance_for_msg:,} تومان")
     except Exception:
         pass
     cap = cb.message.caption or "درخواست شارژ کیف پول"
@@ -217,7 +244,7 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
     if not cb.from_user:
         await cb.answer()
         return
-    if not _is_admin_user_id(cb.from_user.id):
+    if not await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE):
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
@@ -235,12 +262,16 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
             await cb.answer("TopUp not found", show_alert=True)
             return
         topup, user = data
-        if topup.status != "pending":
+        # Atomically reject if pending
+        res = await session.execute(
+            update(WalletTopUp)
+            .where(WalletTopUp.id == topup_id, WalletTopUp.status == "pending")
+            .values(status="rejected", admin_id=admin_id, processed_at=datetime.utcnow())
+            .execution_options(synchronize_session=False)
+        )
+        if (res.rowcount or 0) == 0:
             await cb.answer("Already processed", show_alert=True)
             return
-        topup.status = "rejected"
-        topup.admin_id = admin_id
-        topup.processed_at = datetime.utcnow()
         await log_audit(session, actor="admin", action="wallet_topup_rejected", target_type="wallet_topup", target_id=topup.id, meta=str({"admin_id": admin_id}))
         await session.commit()
     try:
@@ -255,10 +286,7 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
 # Admin settings
 @router.message(F.text.startswith("/admin_wallet_set_min "))
 async def admin_wallet_set_min(message: Message) -> None:
-    if not message.from_user:
-        return
-    admin_ids = [int(x.strip()) for x in os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if x.strip().isdigit()]
-    if message.from_user.id not in admin_ids:
+    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split(maxsplit=1)
@@ -280,8 +308,7 @@ async def admin_wallet_set_min(message: Message) -> None:
 
 @router.message(F.text.startswith("/admin_wallet_balance "))
 async def admin_wallet_balance(message: Message) -> None:
-    admin_ids = [int(x.strip()) for x in os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if x.strip().isdigit()]
-    if not message.from_user or message.from_user.id not in admin_ids:
+    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split(maxsplit=1)
@@ -299,8 +326,7 @@ async def admin_wallet_balance(message: Message) -> None:
 
 @router.message(F.text.startswith("/admin_wallet_add "))
 async def admin_wallet_add(message: Message) -> None:
-    admin_ids = [int(x.strip()) for x in os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if x.strip().isdigit()]
-    if not message.from_user or message.from_user.id not in admin_ids:
+    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split(maxsplit=2)

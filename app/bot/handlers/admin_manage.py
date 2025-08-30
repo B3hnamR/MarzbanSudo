@@ -642,7 +642,7 @@ async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("aplans:disable:"))
 async def cb_aplans_disable(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_TOGGLE_ACTIVE)):
-        await cb.answer("شما د��ترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         _, _, tpl, page = cb.data.split(":")

@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 from typing import Any, Awaitable, Callable, Deque, Dict
 
 from aiogram import BaseMiddleware
-from aiogram.types import Message, TelegramObject
+from aiogram.types import Message, CallbackQuery, TelegramObject
 
 
 class RateLimitMiddleware(BaseMiddleware):
@@ -26,17 +26,31 @@ class RateLimitMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
+        # Message throttling
         if isinstance(event, Message) and event.from_user:
             uid = event.from_user.id
             now = time.monotonic()
             q = self.history[uid]
-            # Drop timestamps outside the window
             while q and (now - q[0]) > self.window:
                 q.popleft()
             if len(q) >= self.max:
-                # Soft deny and optionally notify
                 try:
                     await event.answer(self.notify_text)
+                except Exception:
+                    pass
+                return None
+            q.append(now)
+        # CallbackQuery throttling
+        elif isinstance(event, CallbackQuery) and event.from_user:
+            uid = event.from_user.id
+            now = time.monotonic()
+            q = self.history[uid]
+            while q and (now - q[0]) > self.window:
+                q.popleft()
+            if len(q) >= self.max:
+                try:
+                    # Show a short toast (not an alert popup)
+                    await event.answer(self.notify_text, show_alert=False)
                 except Exception:
                     pass
                 return None

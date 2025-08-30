@@ -7,27 +7,20 @@ from typing import Optional
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.db.session import session_scope
 from app.db.models import Order, User, Plan
 from app.services import marzban_ops as ops
 from app.services.audit import log_audit
 from app.utils.username import tg_username
+from app.services.security import has_capability_async, CAP_ORDERS_MODERATE
 
 router = Router()
 
 
-def _is_admin(message: Message) -> bool:
-    raw = os.getenv("TELEGRAM_ADMIN_IDS", "").strip()
-    ids = {int(x.strip()) for x in raw.split(",") if x.strip().isdigit()}
-    return bool(message.from_user and message.from_user.id in ids)
 
 
-def _is_admin_uid(uid: int | None) -> bool:
-    raw = os.getenv("TELEGRAM_ADMIN_IDS", "").strip()
-    ids = {int(x.strip()) for x in raw.split(",") if x.strip().isdigit()}
-    return bool(uid and uid in ids)
 
 
 def _token_from_subscription_url(url: Optional[str]) -> Optional[str]:
@@ -41,7 +34,7 @@ def _token_from_subscription_url(url: Optional[str]) -> Optional[str]:
 
 @router.message(Command("admin_orders_pending"))
 async def admin_orders_pending(message: Message) -> None:
-    if not _is_admin(message):
+    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_ORDERS_MODERATE)):
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     async with session_scope() as session:
@@ -81,10 +74,7 @@ async def admin_orders_pending(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("ord:approve:"))
 async def cb_approve_order(cb: CallbackQuery) -> None:
-    if not cb.from_user:
-        await cb.answer()
-        return
-    if not _is_admin_uid(cb.from_user.id):
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_ORDERS_MODERATE)):
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
@@ -92,6 +82,7 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("Invalid order id", show_alert=True)
         return
+    token: Optional[str] = None
     async with session_scope() as session:
         row = (
             await session.execute(
@@ -105,15 +96,17 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
             await cb.answer("Order not found", show_alert=True)
             return
         order, user, plan = row
-        # Idempotency guard
-        if order.status in ("paid", "provisioned"):
+        # Atomically mark as paid only if currently pending
+        res = await session.execute(
+            update(Order)
+            .where(Order.id == order_id, Order.status == "pending")
+            .values(status="paid", paid_at=datetime.utcnow())
+            .execution_options(synchronize_session=False)
+        )
+        if (res.rowcount or 0) == 0:
             await cb.answer("Already processed", show_alert=True)
             return
-        # Mark as paid
-        order.status = "paid"
-        order.paid_at = datetime.utcnow()
-        await log_audit(session, actor="admin", action="order_paid", target_type="order", target_id=order.id, meta=str({"by": cb.from_user.id if cb.from_user else None}))
-        await session.flush()
+        await log_audit(session, actor="admin", action="order_paid", target_type="order", target_id=order.id, meta=str({"by": cb.from_user.id}))
         # Provision in Marzban (UI-safe)
         username = user.marzban_username or tg_username(user.telegram_id)
         try:
@@ -126,9 +119,13 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
         token = _token_from_subscription_url(sub_url)
         if token:
             user.subscription_token = token
-        # Mark provisioned
-        order.status = "provisioned"
-        order.provisioned_at = datetime.utcnow()
+        # Mark provisioned if still paid
+        await session.execute(
+            update(Order)
+            .where(Order.id == order_id, Order.status == "paid")
+            .values(status="provisioned", provisioned_at=datetime.utcnow())
+            .execution_options(synchronize_session=False)
+        )
         await log_audit(session, actor="system", action="order_provisioned", target_type="order", target_id=order.id, meta=str({"user": user.id, "plan": plan.id}))
         await session.commit()
     # Notify user with links
@@ -150,10 +147,7 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("ord:reject:"))
 async def cb_reject_order(cb: CallbackQuery) -> None:
-    if not cb.from_user:
-        await cb.answer()
-        return
-    if not _is_admin_uid(cb.from_user.id):
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_ORDERS_MODERATE)):
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
@@ -162,16 +156,17 @@ async def cb_reject_order(cb: CallbackQuery) -> None:
         await cb.answer("Invalid order id", show_alert=True)
         return
     async with session_scope() as session:
-        order = await session.scalar(select(Order).where(Order.id == order_id))
-        if not order:
-            await cb.answer("Order not found", show_alert=True)
-            return
-        if order.status in ("failed", "provisioned"):
+        # Reject only if pending
+        res = await session.execute(
+            update(Order)
+            .where(Order.id == order_id, Order.status == "pending")
+            .values(status="failed", updated_at=datetime.utcnow())
+            .execution_options(synchronize_session=False)
+        )
+        if (res.rowcount or 0) == 0:
             await cb.answer("Already processed", show_alert=True)
             return
-        order.status = "failed"
-        order.updated_at = datetime.utcnow()
-        await log_audit(session, actor="admin", action="order_rejected", target_type="order", target_id=order.id, meta=str({"by": cb.from_user.id if cb.from_user else None}))
+        await log_audit(session, actor="admin", action="order_rejected", target_type="order", target_id=order_id, meta=str({"by": cb.from_user.id}))
         await session.commit()
     await cb.message.edit_text(cb.message.text + "\n\nRejected ❌")
     await cb.answer("Rejected")
