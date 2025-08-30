@@ -294,7 +294,7 @@ Outcome: Reduced hard failures when server returns transient or stateful errors.
 
 - Edit: app/services/provisioning.py
   - Switched from template-based creation to raw JSON payload without `template_id`:
-    - Create with minimal fields: username, status=active, expire=0, data_limit=0, data_limit_reset_strategy=no_reset,
+    - Create with minimal fields: username, status=active, expire=0, data_limit=0, data_limit_reset strategy=no_reset,
       inbounds={ vless: [valid tags from /api/inbounds excluding 'Info'] }, proxies={ vless: {} }, next_plan, note.
     - Then set expire and data_limit in two separate PUT calls.
   - Reads inbound tags from `/api/inbounds` and filters out non-service tags.
@@ -431,3 +431,24 @@ Outcome: Users top-up their wallet with photo-only receipts (approved by admins)
 Outcome: Simpler, robust purchase path with immediate provisioning on sufficient balance.
 
 ---
+
+## 2025-08-31 – Plans UI polish, Wallet min/max limits, Admin UX
+
+- Plans UI
+  - Buy buttons now include both plan title and price (Toman).
+  - Plan listing presented as emoji-rich multi-line blocks with clear labels.
+
+- Wallet settings and enforcement
+  - Added MAX_TOPUP_IRR support with full enforcement in all flows (custom amount, presets, receipt upload).
+  - Interactive admin menu ("💼 تنظیمات کیف پول") now shows and manages both minimum and maximum limits, with options to set custom values and clear the maximum cap.
+  - Fixed Persian text artifacts and ensured consistent Toman formatting.
+
+- Admin keyboard
+  - Added "💼 تنظیمات کیف پول" button to admin start keyboard.
+
+- Fixes
+  - Implemented missing _get_max_topup_value and corrected NameError in wallet settings.
+  - Corrected minor Persian text corruptions (بدون سقف، ندارید، به‌روزرسانی).
+
+- Next
+  - Next milestone per Roadmap: send configurations directly after payment (MVP), delivering client-ready links/files upon approval/purchase.

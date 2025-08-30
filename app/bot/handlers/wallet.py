@@ -314,7 +314,7 @@ def _admin_wallet_keyboard(min_irr: Decimal, max_irr: Decimal | None) -> InlineK
         [InlineKeyboardButton(text=f"حداقل {int(x2/Decimal('10')):,}", callback_data=f"walletadmin:min:set:{int(x2)}"), InlineKeyboardButton(text=f"حداقل {int(x5/Decimal('10')):,}", callback_data=f"walletadmin:min:set:{int(x5)}")],
         [InlineKeyboardButton(text="حداقل: مبلغ دلخواه", callback_data="walletadmin:min:custom")],
     ]
-    rows.append([InlineKeyboardButton(text=(f"حداکثر فعلی: {int(max_irr/Decimal('10')):,} تومان" if max_irr else "حداکثر: بدون سق��"), callback_data="walletadmin:min:refresh")])
+    rows.append([InlineKeyboardButton(text=(f"حداکثر فعلی: {int(max_irr/Decimal('10')):,} تومان" if max_irr else "حداکثر: بدون سقف"), callback_data="walletadmin:min:refresh")])
     rows.append([InlineKeyboardButton(text="حداکثر: مبلغ دلخواه", callback_data="walletadmin:max:custom"), InlineKeyboardButton(text="حذف سقف", callback_data="walletadmin:max:clear")])
     rows.append([InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="walletadmin:min:refresh")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -330,7 +330,7 @@ async def admin_wallet_settings_menu(message: Message) -> None:
         max_irr = await _get_max_topup_value(session)
     header = "تنظیمات کیف پول\n"
     header += f"حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
-    header += f"حداکثر مبلغ شارژ فعلی: {int(max_irr/Decimal('10')):,} تومان\n" if max_irr else "ح��اکثر مبلغ شارژ فعلی: بدون سقف\n"
+    header += f"حداکثر مبلغ شارژ فعلی: {int(max_irr/Decimal('10')):,} تومان\n" if max_irr else "حداکثر مبلغ شارژ فعلی: بدون سقف\n"
     text = header + "یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید."
     await message.answer(text, reply_markup=_admin_wallet_keyboard(min_irr, max_irr))
 
@@ -439,7 +439,7 @@ async def admin_wallet_max_custom_amount(message: Message) -> None:
                 row.value = str(int(irr))
         await session.commit()
     _WALLET_ADMIN_MAX_INTENT.pop(message.from_user.id, None)
-    await message.answer("سقف حداکثر شارژ ب��‌روزرسانی شد.")
+    await message.answer("سقف حداکثر شارژ به‌روزرسانی شد.")
     await admin_wallet_settings_menu(message)
 
 
