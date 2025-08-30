@@ -130,8 +130,8 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
         if balance_irr < price_irr:
             await cb.message.answer(
                 f"موجودی کافی نیست.\n"
-                f"قیمت پلن: {price_irr//10:,} تومان\n"
-                f"موجودی شما: {balance_irr//10:,} تومان\n"
+                f"قیمت پلن: {int(price_irr/Decimal('10')):,} تومان\n"
+                f"موجودی شما: {int(balance_irr/Decimal('10')):,} تومان\n"
                 "از دکمه 💳 کیف پول برای شارژ استفاده کنید."
             )
             await cb.answer("Insufficient balance", show_alert=False)
