@@ -44,7 +44,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌ها")],
             [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="💳 کیف پول")],
-            [KeyboardButton(text="🧾 سفارش‌های در انتظار")],
+            [KeyboardButton(text="🧾 سفارش‌های در انتظار"), KeyboardButton(text="💼 تنظیمات کیف پول")],
             [KeyboardButton(text="⚙️ مدیریت پلن‌ها")],
         ], resize_keyboard=True
     )

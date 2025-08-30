@@ -89,6 +89,15 @@ async def handle_wallet_custom_amount(message: Message) -> None:
         await message.answer("مبلغ نامعتبر است. دوباره ارسال کنید.")
         return
     rial = toman * Decimal("10")
+    async with session_scope() as session:
+        min_irr = await _get_min_topup(session)
+    if rial < min_irr:
+        await message.answer(
+            f"حداقل مبلغ شارژ {int(min_irr/Decimal('10')):,} تومان است. لطفاً مبلغ بیشتری وارد کنید."
+        )
+        # Keep intent open for re-entry
+        _TOPUP_INTENT[message.from_user.id] = Decimal("-1")
+        return
     _TOPUP_INTENT[message.from_user.id] = rial
     await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس رسید پرداخت را ارسال کنید.")
 
@@ -102,6 +111,13 @@ async def cb_wallet_amount(cb: CallbackQuery) -> None:
         amount = Decimal(cb.data.split(":")[2])
     except Exception:
         await cb.answer("مبلغ نامعتبر", show_alert=True)
+        return
+    async with session_scope() as session:
+        min_irr = await _get_min_topup(session)
+    if amount < min_irr:
+        await cb.answer(
+            f"حداقل مبلغ شارژ {int(min_irr/Decimal('10')):,} تومان است.", show_alert=True
+        )
         return
     _TOPUP_INTENT[cb.from_user.id] = amount
     await cb.message.answer(
@@ -132,6 +148,12 @@ async def handle_wallet_photo(message: Message) -> None:
         user = await session.scalar(select(User).where(User.telegram_id == tg_id))
         if not user:
             await message.answer("حساب کاربری یافت نشد.")
+            return
+        min_irr = await _get_min_topup(session)
+        if amount < min_irr:
+            await message.answer(
+                f"مبلغ انتخاب‌شده کمتر از حداقل مجاز است ({int(min_irr/Decimal('10')):,} تومان). لطفاً از منوی کیف پول دوباره اقدام کنید."
+            )
             return
         topup = WalletTopUp(
             user_id=user.id,
