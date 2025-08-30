@@ -6,6 +6,7 @@ from typing import Any, Awaitable, Callable, Deque, Dict
 
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery, TelegramObject
+from app.services.security import is_admin_uid
 
 
 class RateLimitMiddleware(BaseMiddleware):
@@ -26,6 +27,14 @@ class RateLimitMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
+        # Admins are exempt from rate limiting
+        uid_admin = None
+        if isinstance(event, Message) and event.from_user:
+            uid_admin = event.from_user.id
+        elif isinstance(event, CallbackQuery) and event.from_user:
+            uid_admin = event.from_user.id
+        if uid_admin and is_admin_uid(uid_admin):
+            return await handler(event, data)
         # Message throttling
         if isinstance(event, Message) and event.from_user:
             uid = event.from_user.id
