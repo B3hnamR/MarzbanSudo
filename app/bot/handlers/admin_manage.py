@@ -263,8 +263,9 @@ def _fmt_plan_line(p: Plan) -> str:
     return f"#{p.template_id} — {p.title} | حجم: {gb_str} | مدت: {d_str} | قیمت: {price_str} | وضعیت: {st}"
 
 
-async def admin_show_plans_menu(message: Message, page: int = 1) -> None:
-    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
+async def admin_show_plans_menu(message: Message, page: int = 1, requester_id: int | None = None) -> None:
+    uid = requester_id or (message.from_user.id if message.from_user else None)
+    if not (uid and await has_capability_async(uid, CAP_PLANS_MANAGE)):
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     async with session_scope() as session:
@@ -302,7 +303,7 @@ async def admin_show_plans_menu(message: Message, page: int = 1) -> None:
 
 @router.message(F.text == "⚙️ مدیریت پلن‌ها")
 async def _btn_admin_plans(message: Message) -> None:
-    await admin_show_plans_menu(message, page=1)
+    await admin_show_plans_menu(message, page=1, requester_id=message.from_user.id if message.from_user else None)
 
 
 @router.callback_query(F.data.startswith("aplans:page:"))
@@ -314,7 +315,7 @@ async def cb_aplans_page(cb: CallbackQuery) -> None:
         page = int(cb.data.split(":")[2])
     except Exception:
         page = 1
-    await admin_show_plans_menu(cb.message, page=page)
+    await admin_show_plans_menu(cb.message, page=page, requester_id=cb.from_user.id if cb.from_user else None)
     await cb.answer()
 
 
@@ -338,7 +339,7 @@ async def cb_aplans_toggle(cb: CallbackQuery) -> None:
         row.is_active = not bool(row.is_active)
         await session.commit()
     if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
-        await admin_show_plans_menu(cb.message, page=page_num)
+        await admin_show_plans_menu(cb.message, page=page_num, requester_id=cb.from_user.id)
     await cb.answer("اعمال شد")
 
 
@@ -382,7 +383,7 @@ async def admin_plan_price_input(message: Message) -> None:
         await session.commit()
     await message.answer(f"قیمت پلن تنظیم شد: {toman:,} تومان")
     if await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE):
-        await admin_show_plans_menu(message, page=page_num)
+        await admin_show_plans_menu(message, page=page_num, requester_id=message.from_user.id)
 
 
 # Create Plan flow (step-by-step)
@@ -477,7 +478,7 @@ async def admin_plan_create_steps(message: Message) -> None:
             await session.commit()
         _APLANS_CREATE_INTENT.pop(uid, None)
         await message.answer("پلن جدید ایجاد شد.")
-        await admin_show_plans_menu(message, page=page)
+        await admin_show_plans_menu(message, page=page, requester_id=message.from_user.id if message.from_user else None)
         return
 
 
@@ -570,7 +571,7 @@ async def admin_plan_edit_steps(message: Message) -> None:
             return
     await message.answer("ویرایش انجام شد.")
     if await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE):
-        await admin_show_plans_menu(message, page=page_num)
+        await admin_show_plans_menu(message, page=page_num, requester_id=message.from_user.id)
 
 
 @router.callback_query(F.data.startswith("aplans:delete:"))
@@ -633,5 +634,5 @@ async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
     except Exception:
         pass
     if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
-        await admin_show_plans_menu(cb.message, page=page_num)
+        await admin_show_plans_menu(cb.message, page=page_num, requester_id=cb.from_user.id)
     await cb.answer("حذف شد")
