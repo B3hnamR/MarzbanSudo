@@ -29,6 +29,8 @@ def _is_admin_user_id(uid: int | None) -> bool:
 _TOPUP_INTENT: Dict[int, Decimal] = {}
 # Admin intent for setting minimum top-up (awaiting amount input)
 _WALLET_ADMIN_MIN_INTENT: Dict[int, bool] = {}
+# Admin intent for setting maximum top-up (awaiting amount input)
+_WALLET_ADMIN_MAX_INTENT: Dict[int, bool] = {}
 
 
 def _amount_options(min_amount: Decimal | None) -> List[Decimal]:
@@ -44,6 +46,17 @@ async def _get_min_topup(session) -> Decimal:
         except Exception:
             return Decimal("100000")
     return Decimal("100000")
+
+
+async def _get_max_topup(session) -> Decimal | None:
+    row = await session.scalar(select(Setting).where(Setting.key == "MAX_TOPUP_IRR"))
+    if row and str(row.value).strip():
+        try:
+            val = Decimal(str(row.value))
+            return val if val > 0 else None
+        except Exception:
+            return None
+    return None
 
 
 @router.message(F.text == "💳 کیف پول")
@@ -91,11 +104,17 @@ async def handle_wallet_custom_amount(message: Message) -> None:
     rial = toman * Decimal("10")
     async with session_scope() as session:
         min_irr = await _get_min_topup(session)
+        max_irr = await _get_max_topup(session)
     if rial < min_irr:
         await message.answer(
             f"حداقل مبلغ شارژ {int(min_irr/Decimal('10')):,} تومان است. لطفاً مبلغ بیشتری وارد کنید."
         )
-        # Keep intent open for re-entry
+        _TOPUP_INTENT[message.from_user.id] = Decimal("-1")
+        return
+    if max_irr is not None and rial > max_irr:
+        await message.answer(
+            f"حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است. لطفاً مبلغ کمتری وارد کنید."
+        )
         _TOPUP_INTENT[message.from_user.id] = Decimal("-1")
         return
     _TOPUP_INTENT[message.from_user.id] = rial
@@ -114,9 +133,15 @@ async def cb_wallet_amount(cb: CallbackQuery) -> None:
         return
     async with session_scope() as session:
         min_irr = await _get_min_topup(session)
+        max_irr = await _get_max_topup(session)
     if amount < min_irr:
         await cb.answer(
             f"حداقل مبلغ شارژ {int(min_irr/Decimal('10')):,} تومان است.", show_alert=True
+        )
+        return
+    if max_irr is not None and amount > max_irr:
+        await cb.answer(
+            f"حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است.", show_alert=True
         )
         return
     _TOPUP_INTENT[cb.from_user.id] = amount
@@ -150,9 +175,15 @@ async def handle_wallet_photo(message: Message) -> None:
             await message.answer("حساب کاربری یافت نشد.")
             return
         min_irr = await _get_min_topup(session)
+        max_irr = await _get_max_topup(session)
         if amount < min_irr:
             await message.answer(
                 f"مبلغ انتخاب‌شده کمتر از حداقل مجاز است ({int(min_irr/Decimal('10')):,} تومان). لطفاً از منوی کیف پول دوباره اقدام کنید."
+            )
+            return
+        if max_irr is not None and amount > max_irr:
+            await message.answer(
+                f"مبلغ انتخاب‌شده بیشتر از حداکثر مجاز است ({int(max_irr/Decimal('10')):,} تومان). لطفاً از منوی کیف پول دوباره اقدام کنید."
             )
             return
         topup = WalletTopUp(
@@ -274,16 +305,19 @@ async def _get_min_topup_value(session) -> Decimal:
     return Decimal("100000")
 
 
-def _admin_min_keyboard(min_irr: Decimal) -> InlineKeyboardMarkup:
+def _admin_wallet_keyboard(min_irr: Decimal, max_irr: Decimal | None) -> InlineKeyboardMarkup:
     tmn = int(min_irr / Decimal("10"))
     x2 = min_irr * 2
     x5 = min_irr * 5
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"تنظیم به {tmn:,} تومان", callback_data=f"walletadmin:min:set:{int(min_irr)}")],
-        [InlineKeyboardButton(text=f"{int(x2/Decimal('10')):,} تومان", callback_data=f"walletadmin:min:set:{int(x2)}"), InlineKeyboardButton(text=f"{int(x5/Decimal('10')):,} تومان", callback_data=f"walletadmin:min:set:{int(x5)}")],
-        [InlineKeyboardButton(text="مبلغ دلخواه", callback_data="walletadmin:min:custom")],
-        [InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="walletadmin:min:refresh")],
-    ])
+    rows = [
+        [InlineKeyboardButton(text=f"تنظیم حداقل به {tmn:,} تومان", callback_data=f"walletadmin:min:set:{int(min_irr)}")],
+        [InlineKeyboardButton(text=f"حداقل {int(x2/Decimal('10')):,}", callback_data=f"walletadmin:min:set:{int(x2)}"), InlineKeyboardButton(text=f"حداقل {int(x5/Decimal('10')):,}", callback_data=f"walletadmin:min:set:{int(x5)}")],
+        [InlineKeyboardButton(text="حداقل: مبلغ دلخواه", callback_data="walletadmin:min:custom")],
+    ]
+    rows.append([InlineKeyboardButton(text=(f"حداکثر فعلی: {int(max_irr/Decimal('10')):,} تومان" if max_irr else "حداکثر: بدون سق��"), callback_data="walletadmin:min:refresh")])
+    rows.append([InlineKeyboardButton(text="حداکثر: مبلغ دلخواه", callback_data="walletadmin:max:custom"), InlineKeyboardButton(text="حذف سقف", callback_data="walletadmin:max:clear")])
+    rows.append([InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="walletadmin:min:refresh")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @router.message(F.text == "💼 تنظیمات کیف پول")
@@ -293,12 +327,12 @@ async def admin_wallet_settings_menu(message: Message) -> None:
         return
     async with session_scope() as session:
         min_irr = await _get_min_topup_value(session)
-    text = (
-        "تنظیمات کیف پول\n"
-        f"حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
-        "یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید."
-    )
-    await message.answer(text, reply_markup=_admin_min_keyboard(min_irr))
+        max_irr = await _get_max_topup_value(session)
+    header = "تنظیمات کیف پول\n"
+    header += f"حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
+    header += f"حداکثر مبلغ شارژ فعلی: {int(max_irr/Decimal('10')):,} تومان\n" if max_irr else "ح��اکثر مبلغ شارژ فعلی: بدون سقف\n"
+    text = header + "یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید."
+    await message.answer(text, reply_markup=_admin_wallet_keyboard(min_irr, max_irr))
 
 
 @router.callback_query(F.data == "walletadmin:min:refresh")
@@ -308,20 +342,15 @@ async def cb_walletadmin_min_refresh(cb: CallbackQuery) -> None:
         return
     async with session_scope() as session:
         min_irr = await _get_min_topup_value(session)
+        max_irr = await _get_max_topup_value(session)
+    header = "تنظیمات کیف پول\n"
+    header += f"حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
+    header += f"حداکثر مبلغ شارژ فعلی: {int(max_irr/Decimal('10')):,} تومان\n" if max_irr else "حداکثر مبلغ شارژ فعلی: بدون سقف\n"
+    text = header + "یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید."
     try:
-        await cb.message.edit_text(
-            "تنظیمات کیف پول\n"
-            f"حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
-            "یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید.",
-            reply_markup=_admin_min_keyboard(min_irr)
-        )
+        await cb.message.edit_text(text, reply_markup=_admin_wallet_keyboard(min_irr, max_irr))
     except Exception:
-        await cb.message.answer(
-            "تنظیمات کیف پول\n"
-            f"حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
-            "یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید.",
-            reply_markup=_admin_min_keyboard(min_irr)
-        )
+        await cb.message.answer(text, reply_markup=_admin_wallet_keyboard(min_irr, max_irr))
     await cb.answer()
 
 
@@ -356,6 +385,62 @@ async def cb_walletadmin_min_custom(cb: CallbackQuery) -> None:
     _WALLET_ADMIN_MIN_INTENT[cb.from_user.id] = True
     await cb.message.answer("مبلغ دلخواه را به تومان ارسال کنید (مثلاً 150000 برای ۱۵۰ هزار تومان).")
     await cb.answer()
+
+
+@router.callback_query(F.data == "walletadmin:max:custom")
+async def cb_walletadmin_max_custom(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        return
+    _WALLET_ADMIN_MAX_INTENT[cb.from_user.id] = True
+    await cb.message.answer("حداکثر مبلغ را به تومان ارسال کنید (برای حذف سقف 0 وارد کنید).")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "walletadmin:max:clear")
+async def cb_walletadmin_max_clear(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("شما دسترسی ادمین نداری��.", show_alert=True)
+        return
+    async with session_scope() as session:
+        row = await session.scalar(select(Setting).where(Setting.key == "MAX_TOPUP_IRR"))
+        if row:
+            await session.delete(row)
+            await session.commit()
+    await cb.answer("سقف حذف شد")
+    await cb_walletadmin_min_refresh(cb)
+
+
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and _WALLET_ADMIN_MAX_INTENT.get(m.from_user.id, False) and isinstance(getattr(m, "text", None), str) and __import__("re").match(r"^\d{1,10}$", m.text))
+async def admin_wallet_max_custom_amount(message: Message) -> None:
+    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
+        _WALLET_ADMIN_MAX_INTENT.pop(message.from_user.id, None)
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    try:
+        toman = int(message.text.strip())
+        if toman < 0:
+            raise ValueError
+    except Exception:
+        await message.answer("مبلغ نامعتبر است. 0 یا یک عدد صحیح ارسال کنید.")
+        return
+    async with session_scope() as session:
+        row = await session.scalar(select(Setting).where(Setting.key == "MAX_TOPUP_IRR"))
+        if toman == 0:
+            # Clear cap
+            if row:
+                await session.delete(row)
+        else:
+            irr = toman * 10
+            if not row:
+                row = Setting(key="MAX_TOPUP_IRR", value=str(int(irr)))
+                session.add(row)
+            else:
+                row.value = str(int(irr))
+        await session.commit()
+    _WALLET_ADMIN_MAX_INTENT.pop(message.from_user.id, None)
+    await message.answer("سقف حداکثر شارژ ب��‌روزرسانی شد.")
+    await admin_wallet_settings_menu(message)
 
 
 @router.message(lambda m: getattr(m, "from_user", None) and m.from_user and _WALLET_ADMIN_MIN_INTENT.get(m.from_user.id, False) and isinstance(getattr(m, "text", None), str) and __import__("re").match(r"^\d{3,10}$", m.text))
