@@ -271,7 +271,8 @@ async def admin_show_plans_menu(message: Message, page: int = 1, requester_id: i
     async with session_scope() as session:
         rows = (await session.execute(select(Plan).order_by(Plan.template_id))).scalars().all()
     if not rows:
-        await message.answer("هیچ پلنی ثبت نشده است. از «➕ ایجاد پلن جدید» استفاده کنید یا از همگام‌سازی Marzban بهره ببرید.")
+        kb_empty = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="➕ ایجاد پلن جدید", callback_data="aplans:create:1")]])
+        await message.answer("هیچ پلنی ثبت نشده است. از «➕ ایجاد پلن جدید» استفاده کنید یا از همگام‌سازی Marzban بهره ببرید.", reply_markup=kb_empty)
         return
     total = len(rows)
     pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
