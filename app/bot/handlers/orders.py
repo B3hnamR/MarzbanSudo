@@ -40,9 +40,29 @@ async def handle_orders(message: Message) -> None:
             return
         lines = []
         for o, p in rows:
-            amount = f"{o.amount} {o.currency}" if o.amount is not None else "-"
+            # Title from plan or snapshot
             title = p.title if p else (o.plan_title or "-")
-            lines.append(f"- #{o.id} | {o.status} | {title} | {amount} | {o.created_at}")
+            # Amount formatting (prefer Toman for IRR)
+            if o.amount is not None and (o.currency or "").upper() == "IRR":
+                try:
+                    tmn = int(decimal.Decimal(str(o.amount)) / decimal.Decimal("10"))
+                    amount_str = f"{tmn:,} تومان"
+                except Exception:
+                    amount_str = f"{o.amount} {o.currency}"
+            else:
+                amount_str = f"{o.amount} {o.currency}" if o.amount is not None else "-"
+            # Status emoji map
+            st = (o.status or "").lower()
+            st_emoji = {
+                "pending": "🕒",
+                "paid": "💳",
+                "provisioned": "✅",
+                "failed": "❌",
+                "cancelled": "🚫",
+            }.get(st, "ℹ️")
+            paperclip = "📎" if o.receipt_file_path else ""
+            created_str = o.created_at.strftime("%Y-%m-%d %H:%M") if getattr(o, "created_at", None) else "-"
+            lines.append(f"{st_emoji} #{o.id} • {title} • {amount_str} • {created_str} {paperclip}")
         await message.answer("آخرین سفارش‌ها:\n" + "\n".join(lines))
         # نمایش دکمه Attach/Replace برای سفارش‌های در انتظار (فقط عکس/فایل)
         for o, p in rows:
