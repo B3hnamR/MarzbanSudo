@@ -71,11 +71,8 @@ async def handle_plans(message: Message) -> None:
         async with session_scope() as session:
             rows = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
             if not rows:
-                await message.answer("هیچ پلنی در پایگاه‌داده ثبت نشده است. در حال همگام‌سازی از Marzban...")
-                changed = await sync_templates_to_plans(session)
-                if not changed:
-                    await message.answer("همگام‌سازی انجام شد اما پلنی یافت نشد. لطفاً در Marzban حداقل یک Template فعال ایجاد کنید.")
-                    return
+                await message.answer("هیچ پلن فعالی در دسترس نیست.")
+                return
             # send paginated list (page 1)
         await _send_plans_page(message, 1)
     except Exception as e:
