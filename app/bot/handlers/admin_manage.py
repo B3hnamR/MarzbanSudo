@@ -619,15 +619,10 @@ async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
         if not row:
             await cb.answer("پلن یافت نشد", show_alert=True)
             return
-        # Prevent delete when orders reference this plan
-        cnt = await session.scalar(select(func.count()).select_from(Order).where(Order.plan_id == row.id))
-        if cnt and int(cnt) > 0:
-            try:
-                await cb.message.edit_text((cb.message.text or "حذف پلن") + "\n\nحذف ممکن نیست: به این پلن سفارش مرتبط وجود دارد. لطفاً به‌جای حذف، پلن را غیرفعال کنید.")
-            except Exception:
-                pass
-            await cb.answer("دارای سفارش فعال/قدیمی", show_alert=True)
-            return
+        # Decouple orders from plan: nullify plan_id on related orders, then delete plan
+        await session.execute(
+            Order.__table__.update().where(Order.plan_id == row.id).values(plan_id=None)
+        )
         await session.delete(row)
         await session.commit()
     try:
@@ -684,17 +679,10 @@ async def cb_aplans_del_force(cb: CallbackQuery) -> None:
         if not plan:
             await cb.answer("پلن یافت نشد", show_alert=True)
             return
-        # Collect order ids for this plan
-        order_ids = (await session.execute(select(Order.id).where(Order.plan_id == plan.id))).scalars().all()
-        if order_ids:
-            # Delete transactions then orders
-            await session.execute(
-                Transaction.__table__.delete().where(Transaction.order_id.in_(order_ids))
-            )
-            await session.execute(
-                Order.__table__.delete().where(Order.plan_id == plan.id)
-            )
-        # Delete plan
+        # Decouple orders instead of deleting them: set plan_id to NULL then delete plan
+        await session.execute(
+            Order.__table__.update().where(Order.plan_id == plan.id).values(plan_id=None)
+        )
         await session.delete(plan)
         await session.commit()
     try:

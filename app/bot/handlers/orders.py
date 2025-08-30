@@ -29,7 +29,7 @@ async def handle_orders(message: Message) -> None:
             return
         stmt = (
             select(Order, Plan)
-            .join(Plan, Order.plan_id == Plan.id)
+            .outerjoin(Plan, Order.plan_id == Plan.id)
             .where(Order.user_id == db_user.id)
             .order_by(Order.created_at.desc())
             .limit(10)
@@ -41,7 +41,8 @@ async def handle_orders(message: Message) -> None:
         lines = []
         for o, p in rows:
             amount = f"{o.amount} {o.currency}" if o.amount is not None else "-"
-            lines.append(f"- #{o.id} | {o.status} | {p.title} | {amount} | {o.created_at}")
+            title = p.title if p else (o.plan_title or "-")
+            lines.append(f"- #{o.id} | {o.status} | {title} | {amount} | {o.created_at}")
         await message.answer("آخرین سفارش‌ها:\n" + "\n".join(lines))
         # نمایش دکمه Attach/Replace برای سفارش‌های در انتظار (فقط عکس/فایل)
         for o, p in rows:
@@ -58,8 +59,9 @@ async def handle_orders(message: Message) -> None:
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[[InlineKeyboardButton(text=btn_text, callback_data=cb_data)]]
                 )
+                title = p.title if p else (o.plan_title or "-")
                 await message.answer(
-                    f"Order #{o.id} | {p.title} | status: {o.status}{suffix}",
+                    f"Order #{o.id} | {title} | status: {o.status}{suffix}",
                     reply_markup=kb,
                 )
 
@@ -104,6 +106,13 @@ async def handle_buy(message: Message) -> None:
         order = Order(
             user_id=db_user.id,
             plan_id=plan.id,
+            # snapshot of plan at purchase time
+            plan_template_id=plan.template_id,
+            plan_title=plan.title,
+            plan_price=plan.price,
+            plan_currency=plan.currency,
+            plan_duration_days=plan.duration_days,
+            plan_data_limit_bytes=plan.data_limit_bytes,
             status="pending",
             amount=amount,
             currency=plan.currency,
@@ -234,7 +243,7 @@ async def handle_attach_media(message: Message) -> None:
         stmt = (
             select(Order, User, Plan)
             .join(User, Order.user_id == User.id)
-            .join(Plan, Order.plan_id == Plan.id)
+            .outerjoin(Plan, Order.plan_id == Plan.id)
             .where(Order.id == order_id, User.telegram_id == tg_id)
         )
         row = (await session.execute(stmt)).first()
@@ -265,9 +274,10 @@ async def handle_attach_media(message: Message) -> None:
         admin_raw = os.getenv("TELEGRAM_ADMIN_IDS", "")
         admin_ids = [int(x.strip()) for x in admin_raw.split(",") if x.strip().isdigit()]
         if admin_ids:
+            ptitle = plan.title if plan else (order.plan_title or "-")
             caption = (
                 f"رسید جدید\n"
-                f"Order: #{order.id} | {plan.title}\n"
+                f"Order: #{order.id} | {ptitle}\n"
                 f"User: {user.marzban_username} (tg:{user.telegram_id})\n"
                 f"Amount: {order.amount} {order.currency}\n"
                 f"Note: {note or '-'}\n"

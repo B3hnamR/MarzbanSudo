@@ -52,7 +52,15 @@ class Order(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"))
+    plan_id: Mapped[Optional[int]] = mapped_column(ForeignKey("plans.id"), nullable=True)
+
+    # Snapshot of plan details at purchase time (decoupled from Plan lifecycle)
+    plan_template_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    plan_title: Mapped[Optional[str]] = mapped_column(String(191), nullable=True)
+    plan_price: Mapped[Optional[float]] = mapped_column(Numeric(12, 2), nullable=True)
+    plan_currency: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    plan_duration_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    plan_data_limit_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
     status: Mapped[str] = mapped_column(String(32), index=True, default="pending")
     amount: Mapped[float] = mapped_column(Numeric(12, 2))
@@ -67,6 +75,9 @@ class Order(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     provisioned_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Service lifecycle timestamps
+    service_start_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    service_end_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class WalletTopUp(Base):
