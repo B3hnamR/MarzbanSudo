@@ -23,16 +23,25 @@ PAGE_SIZE = 5
 
 
 def _plan_text(p: Plan) -> str:
+    # Human-friendly plan block with emojis
     if p.data_limit_bytes and p.data_limit_bytes > 0:
         gb = p.data_limit_bytes / (1024 ** 3)
-        limit_str = f"{gb:.0f}GB"
+        gb_label = f"{gb:.0f}GB"
     else:
-        limit_str = "نامحدود"
-    dur_str = f"{p.duration_days}d" if p.duration_days and p.duration_days > 0 else "بدون محدودیت زمانی"
+        gb_label = "نامحدود"
+    if p.duration_days and p.duration_days > 0:
+        dur_label = f"{p.duration_days} روز"
+    else:
+        dur_label = "بدون محدودیت"
     price_irr = Decimal(str(p.price or 0))
-    price_tmn = int(price_irr / Decimal("10"))
-    price_str = f"{price_tmn:,} تومان" if price_irr > 0 else "قیمت‌گذاری نشده"
-    return f"{p.title} (ID: {p.template_id}) | حجم: {limit_str} | مدت: {dur_str} | قیمت: {price_str}"
+    price_tmn = int(price_irr / Decimal("10")) if price_irr > 0 else 0
+    price_label = f"{price_tmn:,} تومان" if price_irr > 0 else "قیمت‌گذاری نشده"
+    lines = [
+        f"#{p.template_id} — {p.title}",
+        f"  ⏳ مدت: {dur_label} | 📦 حجم: {gb_label}",
+        f"  💵 قیمت: {price_label}",
+    ]
+    return "\n".join(lines)
 
 
 async def _send_plans_page(message: Message, page: int) -> None:
@@ -46,13 +55,14 @@ async def _send_plans_page(message: Message, page: int) -> None:
         page = max(1, min(page, pages))
         start = (page - 1) * PAGE_SIZE
         subset = all_plans[start:start + PAGE_SIZE]
-        lines = ["پلن‌های موجود (صفحه {}/{}):".format(page, pages)]
+        lines = ["🛍️ پلن‌های موجود • صفحه {}/{}".format(page, pages)]
         buttons = []
         for p in subset:
-            lines.append("- " + _plan_text(p))
+            lines.append(_plan_text(p))
             price_irr = Decimal(str(p.price or 0))
-            label_price = f" - {int(price_irr/Decimal('10')):,} تومان" if price_irr > 0 else " - قیمت‌گذاری نشده"
-            btn_text = f"خرید {p.title}{label_price}"
+            btn_text = (
+                f"🛒 خرید — {int(price_irr/Decimal('10')):,} تومان" if price_irr > 0 else "🛒 خرید"
+            )
             buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"plan:buy:{p.template_id}")])
         nav = []
         if page > 1:
