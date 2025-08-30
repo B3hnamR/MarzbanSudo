@@ -305,6 +305,17 @@ async def _get_min_topup_value(session) -> Decimal:
     return Decimal("100000")
 
 
+async def _get_max_topup_value(session) -> Decimal | None:
+    row = await session.scalar(select(Setting).where(Setting.key == "MAX_TOPUP_IRR"))
+    if row and str(row.value).strip():
+        try:
+            val = Decimal(str(row.value))
+            return val if val > 0 else None
+        except Exception:
+            return None
+    return None
+
+
 def _admin_wallet_keyboard(min_irr: Decimal, max_irr: Decimal | None) -> InlineKeyboardMarkup:
     tmn = int(min_irr / Decimal("10"))
     x2 = min_irr * 2
