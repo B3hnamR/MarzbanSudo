@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 from app.utils.username import tg_username
 from app.services import marzban_ops as ops
 from app.db.session import session_scope
-from app.db.models import Plan, Order
+from app.db.models import Plan, Order, Transaction
 from app.services.security import (
     has_capability_async,
     CAP_PLANS_MANAGE,
@@ -587,7 +587,8 @@ async def cb_aplans_delete(cb: CallbackQuery) -> None:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="بله، حذف شود", callback_data=f"aplans:delconf:yes:{tpl_id}:{page_num}")],
+        [InlineKeyboardButton(text="🧹 حذف همراه با سفارش‌ها", callback_data=f"aplans:delconf:force:{tpl_id}:{page_num}")],
+        [InlineKeyboardButton(text="🚫 فقط غیرفعال‌سازی", callback_data=f"aplans:disable:{tpl_id}:{page_num}")],
         [InlineKeyboardButton(text="خیر، انصراف", callback_data=f"aplans:delconf:no:{tpl_id}:{page_num}")],
     ])
     await cb.message.answer("آیا از حذف این پلن مطمئن هستید؟", reply_markup=kb)
@@ -631,6 +632,73 @@ async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
         await session.commit()
     try:
         await cb.message.edit_text((cb.message.text or "حذف پلن") + "\n\nحذف شد ✅")
+    except Exception:
+        pass
+    if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
+        await admin_show_plans_menu(cb.message, page=page_num, requester_id=cb.from_user.id)
+    await cb.answer("حذف شد")
+
+
+@router.callback_query(F.data.startswith("aplans:disable:"))
+async def cb_aplans_disable(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_TOGGLE_ACTIVE)):
+        await cb.answer("شما د��ترسی ادمین ندارید.", show_alert=True)
+        return
+    try:
+        _, _, tpl, page = cb.data.split(":")
+        tpl_id = int(tpl)
+        page_num = int(page)
+    except Exception:
+        await cb.answer("شناسه نامعتبر", show_alert=True)
+        return
+    async with session_scope() as session:
+        row = await session.scalar(select(Plan).where(Plan.template_id == tpl_id))
+        if not row:
+            await cb.answer("پلن یافت نشد", show_alert=True)
+            return
+        row.is_active = False
+        await session.commit()
+    try:
+        await cb.message.edit_text((cb.message.text or "مدیریت پلن‌ها") + "\n\nپلن غیرفعال شد ✅")
+    except Exception:
+        pass
+    if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
+        await admin_show_plans_menu(cb.message, page=page_num, requester_id=cb.from_user.id)
+    await cb.answer("غیرفعال شد")
+
+
+@router.callback_query(F.data.startswith("aplans:delconf:force:"))
+async def cb_aplans_del_force(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_DELETE)):
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        return
+    try:
+        _, _, _, tpl, page = cb.data.split(":")
+        tpl_id = int(tpl)
+        page_num = int(page)
+    except Exception:
+        await cb.answer("شناسه نامعتبر", show_alert=True)
+        return
+    async with session_scope() as session:
+        plan = await session.scalar(select(Plan).where(Plan.template_id == tpl_id))
+        if not plan:
+            await cb.answer("پلن یافت نشد", show_alert=True)
+            return
+        # Collect order ids for this plan
+        order_ids = (await session.execute(select(Order.id).where(Order.plan_id == plan.id))).scalars().all()
+        if order_ids:
+            # Delete transactions then orders
+            await session.execute(
+                Transaction.__table__.delete().where(Transaction.order_id.in_(order_ids))
+            )
+            await session.execute(
+                Order.__table__.delete().where(Order.plan_id == plan.id)
+            )
+        # Delete plan
+        await session.delete(plan)
+        await session.commit()
+    try:
+        await cb.message.edit_text((cb.message.text or "حذف پلن") + "\n\nحذف کامل شد ✅")
     except Exception:
         pass
     if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
