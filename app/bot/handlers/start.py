@@ -7,6 +7,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKe
 from app.db.session import session_scope
 from app.db.models import Setting
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE
+from sqlalchemy import select
 
 # Import existing handlers to reuse their logic without showing slash commands
 from app.bot.handlers.plans import handle_plans as plans_handler
@@ -146,7 +147,7 @@ async def _get_pv_enabled() -> bool:
     val_env = os.getenv("PHONE_VERIFICATION_ENABLED", "0").strip()
     try:
         async with session_scope() as session:
-            row = await session.scalar(Setting.__table__.select().where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
+            row = await session.scalar(select(Setting).where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
             if row:
                 return str(row.value).strip() in {"1", "true", "True"}
     except Exception:
@@ -176,7 +177,7 @@ async def cb_admin_pv_toggle(cb: CallbackQuery) -> None:
     if cb.data in {"pv:on", "pv:off"}:
         val = "1" if cb.data == "pv:on" else "0"
         async with session_scope() as session:
-            row = await session.scalar(Setting.__table__.select().where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
+            row = await session.scalar(select(Setting).where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
             if not row:
                 row = Setting(key="PHONE_VERIFICATION_ENABLED", value=val)
                 session.add(row)
@@ -209,12 +210,12 @@ async def handle_contact_share(message: Message) -> None:
     phone = message.contact.phone_number
     from datetime import datetime
     async with session_scope() as session:
-        row_p = await session.scalar(Setting.__table__.select().where(Setting.key == f"USER:{message.from_user.id}:PHONE"))
+        row_p = await session.scalar(select(Setting).where(Setting.key == f"USER:{message.from_user.id}:PHONE"))
         if not row_p:
             session.add(Setting(key=f"USER:{message.from_user.id}:PHONE", value=phone))
         else:
             row_p.value = phone
-        row_t = await session.scalar(Setting.__table__.select().where(Setting.key == f"USER:{message.from_user.id}:PHONE_VERIFIED_AT"))
+        row_t = await session.scalar(select(Setting).where(Setting.key == f"USER:{message.from_user.id}:PHONE_VERIFIED_AT"))
         now_iso = datetime.utcnow().isoformat()
         if not row_t:
             session.add(Setting(key=f"USER:{message.from_user.id}:PHONE_VERIFIED_AT", value=now_iso))
