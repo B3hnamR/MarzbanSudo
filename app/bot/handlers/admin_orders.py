@@ -15,6 +15,7 @@ from app.services import marzban_ops as ops
 from app.services.audit import log_audit
 from app.utils.username import tg_username
 from app.services.security import has_capability_async, CAP_ORDERS_MODERATE
+from app.marzban.client import get_client
 
 router = Router()
 
@@ -128,17 +129,70 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
         )
         await log_audit(session, actor="system", action="order_provisioned", target_type="order", target_id=order.id, meta=str({"user": user.id, "plan": plan.id}))
         await session.commit()
-    # Notify user with links
+    # Notify user with full delivery: summary, direct configs, QR, manage buttons
     try:
-        lines = ["سفارش شما تایید و سرویس فعال شد."]
         sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
+        summary_lines = [
+            "✅ سفارش شما تایید و سرویس فعال شد.",
+            f"🧩 پلن: {plan.title}",
+        ]
         if token and sub_domain:
-            lines += [
-                f"لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
-                f"v2ray: https://{sub_domain}/sub4me/{token}/v2ray",
-                f"JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
+            summary_lines += [
+                f"🔗 لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
+                f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray",
+                f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
             ]
-        await cb.message.bot.send_message(chat_id=user.telegram_id, text="\n".join(lines))
+        await cb.message.bot.send_message(chat_id=user.telegram_id, text="\n".join(summary_lines))
+        # Fetch latest user info for direct configs
+        links = []
+        sub_url = ""
+        try:
+            client = await get_client()
+            info = await client.get_user(user.marzban_username or tg_username(user.telegram_id))
+            links = info.get("links") or []
+            sub_url = info.get("subscription_url") or ""
+        except Exception:
+            links = []
+            sub_url = ""
+        finally:
+            try:
+                await client.aclose()  # type: ignore
+            except Exception:
+                pass
+        # Inline manage keyboard
+        manage_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 مدیریت اکانت", callback_data="acct:refresh"), InlineKeyboardButton(text="📋 کپی همه", callback_data="acct:copyall")]])
+        # Send text configs in chunks
+        if links:
+            chunk = []
+            size = 0
+            for ln in links:
+                s = str(ln).strip()
+                if not s:
+                    continue
+                entry = ("\n\n" if chunk else "") + s
+                if size + len(entry) > 3500:
+                    await cb.message.bot.send_message(chat_id=user.telegram_id, text="\n\n".join(chunk))
+                    chunk = [s]
+                    size = len(s)
+                    continue
+                chunk.append(s)
+                size += len(entry)
+            if chunk:
+                await cb.message.bot.send_message(chat_id=user.telegram_id, text="\n\n".join(chunk), reply_markup=manage_kb)
+        else:
+            await cb.message.bot.send_message(chat_id=user.telegram_id, text="برای مدیریت و دریافت کانفیگ‌ها از دکمه زیر استفاده کنید.", reply_markup=manage_kb)
+        # Send QR
+        disp_url = ""
+        if sub_domain and token:
+            disp_url = f"https://{sub_domain}/sub4me/{token}/"
+        elif sub_url:
+            disp_url = sub_url
+        if disp_url:
+            qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={disp_url}"
+            try:
+                await cb.message.bot.send_photo(chat_id=user.telegram_id, photo=qr_url, caption="🔳 QR اشتراک")
+            except Exception:
+                await cb.message.bot.send_message(chat_id=user.telegram_id, text=disp_url)
     except Exception:
         pass
     await cb.message.edit_text(cb.message.text + "\n\nApproved ✅")

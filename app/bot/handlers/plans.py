@@ -5,6 +5,7 @@ import os
 from decimal import Decimal
 from datetime import datetime
 from typing import List
+from app.marzban.client import get_client
 
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -184,18 +185,67 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
         try:
             sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
             lines = [
-                "خرید با موفقیت از کیف پول انجام شد.",
-                f"پلن: {plan.title}",
-                f"مبلغ کسرشده: {int(price_irr/Decimal('10')):,} تومان",
-                f"موجودی جدید: {int(Decimal(str(db_user.balance or 0))/Decimal('10')):,} تومان",
+                "✅ خرید با موفقیت از کیف پول انجام شد.",
+                f"🧩 پلن: {plan.title}",
+                f"💳 مبلغ کسرشده: {int(price_irr/Decimal('10')):,} تومان",
+                f"👛 موجودی جدید: {int(Decimal(str(db_user.balance or 0))/Decimal('10')):,} تومان",
             ]
             if token and sub_domain:
                 lines += [
-                    f"لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
-                    f"v2ray: https://{sub_domain}/sub4me/{token}/v2ray",
-                    f"JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
+                    f"🔗 لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
+                    f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray",
+                    f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
                 ]
             await cb.message.answer("\n".join(lines))
         except Exception:
             pass
+        # Post-purchase delivery: direct configs, copy-all, QR, manage account
+        try:
+            client = await get_client()
+            info2 = await client.get_user(db_user.marzban_username or username)
+        except Exception:
+            info2 = {}
+        finally:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+        links = info2.get("links") or []
+        sub_url = info2.get("subscription_url") or ""
+        token2 = token or (sub_url.rstrip("/").split("/")[-1] if sub_url else None)
+        # Manage/Copy buttons
+        manage_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 مدیریت اکانت", callback_data="acct:refresh"), InlineKeyboardButton(text="📋 کپی همه", callback_data="acct:copyall")]])
+        # Send text configs (chunked, with blank lines)
+        if links:
+            chunk: List[str] = []
+            size = 0
+            for ln in links:
+                s = str(ln).strip()
+                if not s:
+                    continue
+                entry = ("\n\n" if chunk else "") + s
+                if size + len(entry) > 3500:
+                    await cb.message.answer("\n\n".join(chunk))
+                    chunk = [s]
+                    size = len(s)
+                    continue
+                chunk.append(s)
+                size += len(entry)
+            if chunk:
+                await cb.message.answer("\n\n".join(chunk), reply_markup=manage_kb)
+        else:
+            # If no direct configs, still show manage button for user to fetch
+            await cb.message.answer("برای مدیریت و دریافت کانفیگ‌ها از دکمه زیر استفاده کنید.", reply_markup=manage_kb)
+        # Send QR for subscription
+        disp_url = ""
+        if sub_domain and token2:
+            disp_url = f"https://{sub_domain}/sub4me/{token2}/"
+        elif sub_url:
+            disp_url = sub_url
+        if disp_url:
+            qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={disp_url}"
+            try:
+                await cb.message.answer_photo(qr_url, caption="🔳 QR اشتراک")
+            except Exception:
+                await cb.message.answer(disp_url)
         await cb.answer("Purchased")

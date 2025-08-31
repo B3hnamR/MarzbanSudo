@@ -7,7 +7,7 @@ from typing import Dict, List
 
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from sqlalchemy import select, update
+from sqlalchemy import select, update, desc
 
 from app.db.session import session_scope
 from app.db.models import User, WalletTopUp, Setting
@@ -15,6 +15,38 @@ from app.services.audit import log_audit
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE
 
 router = Router()
+
+
+@router.message(F.text == "💳 درخواست‌های شارژ")
+async def admin_wallet_pending_topups(message: Message) -> None:
+    # List up to 9 pending wallet top-ups with Approve/Reject buttons
+    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    async with session_scope() as session:
+        rows = (
+            await session.execute(
+                select(WalletTopUp, User)
+                .join(User, WalletTopUp.user_id == User.id)
+                .where(WalletTopUp.status == "pending")
+                .order_by(desc(WalletTopUp.created_at))
+                .limit(9)
+            )
+        ).all()
+    if not rows:
+        await message.answer("درخواستی برای بررسی موجود نیست.")
+        return
+    for topup, user in rows:
+        tmn = int((Decimal(topup.amount or 0) / Decimal("10")).to_integral_value())
+        text = (
+            "💳 درخواست شارژ کیف پول\n"
+            f"ID: {topup.id} | وضعیت: {topup.status}\n"
+            f"کاربر: {user.marzban_username} (tg:{user.telegram_id})\n"
+            f"مبلغ: {tmn:,} تومان\n"
+            f"ثبت: {topup.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Approve ✅", callback_data=f"wallet:approve:{topup.id}"), InlineKeyboardButton(text="Reject ❌", callback_data=f"wallet:reject:{topup.id}")]])
+        await message.answer(text, reply_markup=kb)
 
 
 def _admin_ids() -> set[int]:
