@@ -38,7 +38,7 @@ async def admin_wallet_pending_topups(message: Message) -> None:
         return
     for topup, user in rows:
         tmn = int((Decimal(topup.amount or 0) / Decimal("10")).to_integral_value())
-        text = (
+        caption = (
             "💳 درخواست شارژ کیف پول\n"
             f"ID: {topup.id} | وضعیت: {topup.status}\n"
             f"کاربر: {user.marzban_username} (tg:{user.telegram_id})\n"
@@ -46,7 +46,14 @@ async def admin_wallet_pending_topups(message: Message) -> None:
             f"ثبت: {topup.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Approve ✅", callback_data=f"wallet:approve:{topup.id}"), InlineKeyboardButton(text="Reject ❌", callback_data=f"wallet:reject:{topup.id}")]])
-        await message.answer(text, reply_markup=kb)
+        # Try to show original receipt media; fallback to text if sending media fails
+        try:
+            await message.bot.send_photo(chat_id=message.chat.id, photo=topup.receipt_file_id, caption=caption, reply_markup=kb)
+        except Exception:
+            try:
+                await message.bot.send_document(chat_id=message.chat.id, document=topup.receipt_file_id, caption=caption, reply_markup=kb)
+            except Exception:
+                await message.answer(caption, reply_markup=kb)
 
 
 def _admin_ids() -> set[int]:
@@ -421,8 +428,15 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
             await cb.message.bot.send_message(chat_id=user_telegram_id, text=f"شارژ شما تایید شد. موجودی جدید: {new_balance_for_msg:,} تومان")
     except Exception:
         pass
-    cap = cb.message.caption or "درخواست شارژ کیف پول"
-    await cb.message.edit_caption(cap + "\n\nApproved ✅")
+    try:
+        if getattr(cb.message, "caption", None):
+            cap = cb.message.caption or "درخواست شارژ کیف پول"
+            await cb.message.edit_caption(cap + "\n\nApproved ✅")
+        else:
+            txt = (cb.message.text or "درخواست شارژ کیف پول") + "\n\nApproved ✅"
+            await cb.message.edit_text(txt)
+    except Exception:
+        pass
     await cb.answer("Approved")
 
 
@@ -678,8 +692,15 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
         await cb.message.bot.send_message(chat_id=user.telegram_id, text=f"درخواست شارژ شما رد شد. مبلغ: {int((topup.amount or 0)/10):,} تومان")
     except Exception:
         pass
-    cap = cb.message.caption or "درخواست شارژ کیف پول"
-    await cb.message.edit_caption(cap + "\n\nRejected ❌")
+    try:
+        if getattr(cb.message, "caption", None):
+            cap = cb.message.caption or "درخواست شارژ کیف پول"
+            await cb.message.edit_caption(cap + "\n\nRejected ❌")
+        else:
+            txt = (cb.message.text or "درخواست شارژ کیف پول") + "\n\nRejected ❌"
+            await cb.message.edit_text(txt)
+    except Exception:
+        pass
     await cb.answer("Rejected")
 
 
