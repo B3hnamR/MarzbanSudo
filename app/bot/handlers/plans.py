@@ -9,7 +9,7 @@ from app.marzban.client import get_client
 
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from sqlalchemy import select
 from app.db.models import Setting
 
@@ -140,11 +140,12 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
     pv_enabled = False
     try:
         async with session_scope() as session:
-            row = await session.scalar(Setting.__table__.select().where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
+            from sqlalchemy import select as sa_select
+            row = await session.scalar(sa_select(Setting).where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
             if row and str(row.value).strip() in {"1", "true", "True"}:
                 pv_enabled = True
             if pv_enabled:
-                row_v = await session.scalar(Setting.__table__.select().where(Setting.key == f"USER:{cb.from_user.id}:PHONE_VERIFIED_AT"))
+                row_v = await session.scalar(sa_select(Setting).where(Setting.key == f"USER:{cb.from_user.id}:PHONE_VERIFIED_AT"))
                 verified = bool(row_v and str(row_v.value).strip())
                 if not verified and not is_admin_user:
                     # Ask for contact share
