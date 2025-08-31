@@ -64,10 +64,11 @@ async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
     used_traffic = int(data.get("used_traffic") or 0)
     remaining = max(data_limit - used_traffic, 0)
     links: List[str] = list(map(str, data.get("links") or []))
+    rlm = "\u200F"
     # Emoji-rich header
     lines = [
         f"👤 نام کاربری: {username}",
-        f"🆔 شناسه تلگرام: {tg_id}",
+        f"🆔 شناسه تلگرام: {rlm}{tg_id}",
         f"🗓️ تاریخ ثبت‌نام: {reg_date_txt}",
         f"🧾 تعداد خریدها: {orders_count}",
         f"📦 حجم کل: {_fmt_gb2(data_limit)}",
@@ -157,30 +158,34 @@ async def cb_account_links(cb: CallbackQuery) -> None:
     client = await get_client()
     try:
         data = await client.get_user(username)
-        links = data.get("links") or []
+        links = list(map(str, data.get("links") or []))
     finally:
         await client.aclose()
     if not links:
         await cb.message.answer("هیچ کانفیگ مستقیمی از پنل دریافت نشد.")
         await cb.answer()
         return
-    # Send links in chunks, separated with blank lines for easy copy
-    chunk: List[str] = []
-    size = 0
-    for ln in links:
-        s = str(ln).strip()
-        if not s:
-            continue
-        entry = ("\n\n" if chunk else "") + s
-        if size + len(entry) > 3500:
-            await cb.message.answer("\n\n".join(chunk))
-            chunk = [s]
-            size = len(s)
-            continue
-        chunk.append(s)
-        size += len(entry)
-    if chunk:
-        await cb.message.answer("\n\n".join(chunk))
+    body = "\n\n".join([s.strip() for s in links if s and s.strip()])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📋 کپی همه", callback_data="acct:copyall")]])
+    if len(body) <= 3500 and len(body) > 0:
+        await cb.message.answer(body, reply_markup=kb)
+    else:
+        chunk: List[str] = []
+        size = 0
+        for s in links:
+            s = s.strip()
+            if not s:
+                continue
+            entry = ("\n\n" if chunk else "") + s
+            if size + len(entry) > 3500:
+                await cb.message.answer("\n\n".join(chunk))
+                chunk = [s]
+                size = len(s)
+                continue
+            chunk.append(s)
+            size += len(entry)
+        if chunk:
+            await cb.message.answer("\n\n".join(chunk), reply_markup=kb)
     await cb.answer("Sent")
 
 

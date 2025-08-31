@@ -16,6 +16,120 @@ from app.services.security import has_capability_async, CAP_WALLET_MODERATE
 
 router = Router()
 
+# ===== Admin Manual Wallet Add (UI flow) =====
+# Per-admin state: { admin_id: { 'stage': 'await_ref'|'await_unit'|'await_amount',
+#                                'user_id': int|None, 'unit': 'IRR'|'TMN'|None } }
+_WALLET_MANUAL_ADD_INTENT: Dict[int, Dict[str, object]] = {}
+
+
+@router.message(F.text == "➕ شارژ دستی")
+async def admin_wallet_manual_add_start(message: Message) -> None:
+    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    admin_id = message.from_user.id
+    _WALLET_MANUAL_ADD_INTENT[admin_id] = {"stage": "await_ref", "user_id": None, "unit": None}
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="لغو", callback_data="walletadm:add:cancel")]])
+    await message.answer("شناسه کاربر را ارسال کنید (username یا Telegram ID).", reply_markup=kb)
+
+
+@router.callback_query(F.data == "walletadm:add:cancel")
+async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
+    uid = cb.from_user.id if cb.from_user else None
+    _WALLET_MANUAL_ADD_INTENT.pop(uid, None)
+    await cb.answer("لغو شد")
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _WALLET_MANUAL_ADD_INTENT and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("stage") == "await_ref" and isinstance(getattr(m, "text", None), str))
+async def admin_wallet_manual_add_ref(message: Message) -> None:
+    admin_id = message.from_user.id
+    if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
+        _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    ref = message.text.strip()
+    async with session_scope() as session:
+        user = None
+        if ref.isdigit():
+            user = await session.scalar(select(User).where(User.telegram_id == int(ref)))
+        else:
+            user = await session.scalar(select(User).where(User.marzban_username == ref))
+        if not user:
+            await message.answer("کاربر یافت نشد. مجدد شناسه صحیح را ارسال کنید یا لغو کنید.")
+            return
+        _WALLET_MANUAL_ADD_INTENT[admin_id] = {"stage": "await_unit", "user_id": user.id, "unit": None}
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="ورود مبلغ به تو��ان", callback_data="walletadm:add:unit:TMN"), InlineKeyboardButton(text="ورود مبلغ به ریال", callback_data="walletadm:add:unit:IRR")]])
+    await message.answer("واحد مبلغ را انتخاب کنید:", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("walletadm:add:unit:"))
+async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
+    uid = cb.from_user.id if cb.from_user else None
+    state = _WALLET_MANUAL_ADD_INTENT.get(uid)
+    if not state or state.get("stage") != "await_unit":
+        await cb.answer()
+        return
+    if not await has_capability_async(uid, CAP_WALLET_MODERATE):
+        _WALLET_MANUAL_ADD_INTENT.pop(uid, None)
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        return
+    unit = cb.data.split(":")[-1]
+    if unit not in {"TMN", "IRR"}:
+        await cb.answer("واحد نامعتبر", show_alert=True)
+        return
+    state["unit"] = unit
+    state["stage"] = "await_amount"
+    await cb.message.answer("مبلغ را به صورت عدد ارسال کنید.")
+    await cb.answer()
+
+
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _WALLET_MANUAL_ADD_INTENT and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("stage") == "await_amount" and isinstance(getattr(m, "text", None), str))
+async def admin_wallet_manual_add_amount(message: Message) -> None:
+    admin_id = message.from_user.id
+    state = _WALLET_MANUAL_ADD_INTENT.get(admin_id)
+    if not state or not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
+        _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    try:
+        val = Decimal(message.text.strip())
+        if val <= 0:
+            raise ValueError
+    except Exception:
+        await message.answer("مبلغ نامعتبر است. یک عدد مثبت ارسال کنید یا لغو کنید.")
+        return
+    unit = state.get("unit")
+    user_id = state.get("user_id")
+    if unit not in {"TMN", "IRR"} or not user_id:
+        _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
+        await message.answer("وضعیت نامعتبر. از ابتدا تلاش کنید.")
+        return
+    irr = val * Decimal('10') if unit == "TMN" else val
+    tmn_add = int((irr/Decimal('10')).to_integral_value())
+    async with session_scope() as session:
+        user = await session.scalar(select(User).where(User.id == int(user_id)))
+        if not user:
+            _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
+            await message.answer("کاربر یافت نشد.")
+            return
+        user.balance = (Decimal(user.balance or 0) + irr)
+        await log_audit(session, actor="admin", action="wallet_manual_add", target_type="user", target_id=user.id, meta=str({"amount": str(irr)}))
+        await session.commit()
+        new_tmn = int((Decimal(user.balance or 0)/Decimal('10')).to_integral_value())
+        target_tg = user.telegram_id
+        target_username = user.marzban_username
+    # notify user
+    try:
+        await message.bot.send_message(chat_id=target_tg, text=f"✅ شارژ دستی توسط ادمین: +{tmn_add:,} تومان\nموجودی جدید: {new_tmn:,} تومان")
+    except Exception:
+        pass
+    _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
+    await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
+
 
 @router.message(F.text == "💳 درخواست‌های شارژ")
 async def admin_wallet_pending_topups(message: Message) -> None:
@@ -72,8 +186,8 @@ _WALLET_ADMIN_MIN_INTENT: Dict[int, bool] = {}
 _WALLET_ADMIN_MAX_INTENT: Dict[int, bool] = {}
 # Admin intent for reject-with-reason: admin_id -> topup_id
 _WALLET_REJECT_REASON_INTENT: Dict[int, int] = {}
-# Context to edit original admin message: admin_id -> (chat_id, message_id)
-_WALLET_REJECT_REASON_CTX: Dict[int, Tuple[int, int]] = {}
+# Context to edit original admin message: admin_id -> (chat_id, message_id, original_content, kind['caption'|'text'])
+_WALLET_REJECT_REASON_CTX: Dict[int, Tuple[int, int, str, str]] = {}
 
 
 def _amount_options(min_amount: Decimal | None) -> List[Decimal]:
@@ -375,7 +489,11 @@ async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
     _WALLET_REJECT_REASON_INTENT[cb.from_user.id] = topup_id
-    _WALLET_REJECT_REASON_CTX[cb.from_user.id] = (cb.message.chat.id, cb.message.message_id)
+    orig_caption = getattr(cb.message, "caption", None)
+    orig_text = getattr(cb.message, "text", None)
+    content = orig_caption if orig_caption is not None else (orig_text or "")
+    kind = "caption" if orig_caption is not None else "text"
+    _WALLET_REJECT_REASON_CTX[cb.from_user.id] = (cb.message.chat.id, cb.message.message_id, content, kind)
     await cb.message.answer("لطفاً دلیل رد درخواست را ارسال کنید (یک پیام متنی).")
     await cb.answer()
 
@@ -418,14 +536,20 @@ async def admin_wallet_reject_with_reason_text(message: Message) -> None:
     except Exception:
         pass
     if ctx:
-        chat_id, msg_id = ctx
+        chat_id, msg_id, content, kind = ctx
+        new_content = (content or "")
+        append_txt = f"رد شد ❌\nدلیل: {reason}"
+        if new_content:
+            new_content = new_content + "\n\n" + append_txt
+        else:
+            new_content = append_txt
         try:
-            await message.bot.edit_message_caption(chat_id=chat_id, message_id=msg_id, caption=(message.chat.full_name if False else "") + f"رد شد ❌\nدلیل: {reason}")
+            if kind == "caption":
+                await message.bot.edit_message_caption(chat_id=chat_id, message_id=msg_id, caption=new_content)
+            else:
+                await message.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=new_content)
         except Exception:
-            try:
-                await message.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"رد شد ❌\nدلیل: {reason}")
-            except Exception:
-                pass
+            pass
     await message.answer("رد شد و دلیل به کاربر اطلاع داده شد.")
 
 
