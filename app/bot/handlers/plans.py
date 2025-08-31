@@ -79,7 +79,7 @@ async def _send_plans_page(message: Message, page: int) -> None:
 
 @router.message(Command("plans"))
 async def handle_plans(message: Message) -> None:
-    await message.answer("در حال دریافت پلن‌ها...")
+    await message.answer("⏳ در حال دریافت پلن‌ها...")
     try:
         async with session_scope() as session:
             rows = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
@@ -113,7 +113,7 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
     if not cb.from_user:
         await cb.answer()
         return
-    # Stage 3: Required channel membership gate (bypass for admins)
+    # Gates: channel + phone; only show confirm if gates pass
     channel = os.getenv("REQUIRED_CHANNEL", "").strip()
     admin_ids_env = os.getenv("TELEGRAM_ADMIN_IDS", "")
     is_admin_user = False
@@ -137,25 +137,85 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
         except Exception:
             pass
     # Stage 2: Phone verification gate
-    pv_enabled = False
     try:
+        pv_enabled = False
         async with session_scope() as session:
             from sqlalchemy import select as sa_select
             row = await session.scalar(sa_select(Setting).where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
             if row and str(row.value).strip() in {"1", "true", "True"}:
                 pv_enabled = True
-            if pv_enabled:
+            if pv_enabled and not is_admin_user:
                 row_v = await session.scalar(sa_select(Setting).where(Setting.key == f"USER:{cb.from_user.id}:PHONE_VERIFIED_AT"))
                 verified = bool(row_v and str(row_v.value).strip())
-                if not verified and not is_admin_user:
-                    # Ask for contact share
+                if not verified:
                     rk = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="📱 ارسال شماره من", request_contact=True)]], resize_keyboard=True, one_time_keyboard=True)
                     await cb.message.answer("برای ادامه خرید، لطفاً شماره تلگرام خود را ارسال کنید.", reply_markup=rk)
                     await cb.answer()
                     return
     except Exception:
         pass
-    # Wallet-aware purchase
+    # Show confirmation
+    async with session_scope() as session:
+        plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
+    if not plan:
+        await cb.answer("پلن یافت نشد", show_alert=True)
+        return
+    price_irr = Decimal(str(plan.price or 0))
+    tmn = int(price_irr/Decimal('10')) if price_irr > 0 else 0
+    text = f"آیا از خرید پلن زیر اطمینان د��رید؟\n\n🧩 {plan.title}\n💵 مبلغ: {tmn:,} تومان"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تایید ✅", callback_data=f"plan:confirm:{tpl_id}"), InlineKeyboardButton(text="انصراف ❌", callback_data="plan:cancel")]])
+    await cb.message.answer(text, reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("plan:confirm:"))
+async def cb_plan_confirm(cb: CallbackQuery) -> None:
+    try:
+        tpl_id = int(cb.data.split(":")[2])
+    except Exception:
+        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        return
+    # Re-run gates quickly (in case state changed)
+    channel = os.getenv("REQUIRED_CHANNEL", "").strip()
+    admin_ids_env = os.getenv("TELEGRAM_ADMIN_IDS", "")
+    is_admin_user = False
+    try:
+        is_admin_user = cb.from_user and (cb.from_user.id in {int(x.strip()) for x in admin_ids_env.split(',') if x.strip().isdigit()})
+    except Exception:
+        is_admin_user = False
+    if channel and not is_admin_user:
+        try:
+            member = await cb.message.bot.get_chat_member(chat_id=channel, user_id=cb.from_user.id)
+            if getattr(member, "status", None) not in {"member", "creator", "administrator"}:
+                await cb.answer("ابتدا در کا��ال عضو شوید.", show_alert=True)
+                return
+        except Exception:
+            pass
+    try:
+        from sqlalchemy import select as sa_select
+        async with session_scope() as session:
+            row = await session.scalar(sa_select(Setting).where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
+            if row and str(row.value).strip() in {"1", "true", "True"} and not is_admin_user:
+                row_v = await session.scalar(sa_select(Setting).where(Setting.key == f"USER:{cb.from_user.id}:PHONE_VERIFIED_AT"))
+                if not (row_v and str(row_v.value).strip()):
+                    await cb.answer("ابتدا شماره خود را تایید کنید.", show_alert=True)
+                    return
+    except Exception:
+        pass
+    # Proceed with purchase
+    await _do_purchase(cb, tpl_id)
+
+
+@router.callback_query(F.data == "plan:cancel")
+async def cb_plan_cancel(cb: CallbackQuery) -> None:
+    await cb.answer("انصراف شد")
+    try:
+        await cb.message.edit_text("خرید لغو شد ❌")
+    except Exception:
+        pass
+
+
+async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
     async with session_scope() as session:
         plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
         if not plan:
