@@ -30,7 +30,7 @@ async def admin_wallet_manual_add_start(message: Message) -> None:
     admin_id = message.from_user.id
     _WALLET_MANUAL_ADD_INTENT[admin_id] = {"stage": "await_ref", "user_id": None, "unit": None}
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="لغو", callback_data="walletadm:add:cancel")]])
-    await message.answer("شناسه کاربر را ارسال کنید (username یا Telegram ID).", reply_markup=kb)
+    await message.answer("👤 لطفاً شناسه کاربر را ارسال کنید (نام‌کاربری یا 🆔 تلگرام).", reply_markup=kb)
 
 
 @router.callback_query(F.data == "walletadm:add:cancel")
@@ -62,7 +62,7 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
             await message.answer("کاربر یافت نشد. مجدد شناسه صحیح را ارسال کنید یا لغو کنید.")
             return
         _WALLET_MANUAL_ADD_INTENT[admin_id] = {"stage": "await_unit", "user_id": user.id, "unit": None}
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="ورود مبلغ به تو��ان", callback_data="walletadm:add:unit:TMN"), InlineKeyboardButton(text="ورود مبلغ به ریال", callback_data="walletadm:add:unit:IRR")]])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="ورود مبلغ به تومان", callback_data="walletadm:add:unit:TMN"), InlineKeyboardButton(text="ورود مبلغ به ریال", callback_data="walletadm:add:unit:IRR")]])
     await message.answer("واحد مبلغ را انتخاب کنید:", reply_markup=kb)
 
 
@@ -481,7 +481,7 @@ async def handle_wallet_photo(message: Message) -> None:
 @router.callback_query(F.data.startswith("wallet:rejectr:"))
 async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
-        await cb.answer("شما ��سترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         topup_id = int(cb.data.split(":")[2])
@@ -775,7 +775,7 @@ async def cb_walletadmin_max_custom(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "walletadmin:max:clear")
 async def cb_walletadmin_max_clear(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
-        await cb.answer("شما دسترسی ادمین نداری��.", show_alert=True)
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     async with session_scope() as session:
         row = await session.scalar(select(Setting).where(Setting.key == "MAX_TOPUP_IRR"))
