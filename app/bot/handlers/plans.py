@@ -11,6 +11,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select
+from app.db.models import Setting
 
 from app.db.session import session_scope
 from app.db.models import Plan, User, Order
@@ -112,6 +113,47 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
     if not cb.from_user:
         await cb.answer()
         return
+    # Stage 3: Required channel membership gate (bypass for admins)
+    channel = os.getenv("REQUIRED_CHANNEL", "").strip()
+    admin_ids_env = os.getenv("TELEGRAM_ADMIN_IDS", "")
+    is_admin_user = False
+    try:
+        is_admin_user = cb.from_user.id in {int(x.strip()) for x in admin_ids_env.split(',') if x.strip().isdigit()}
+    except Exception:
+        is_admin_user = False
+    if channel and not is_admin_user:
+        try:
+            member = await cb.message.bot.get_chat_member(chat_id=channel, user_id=cb.from_user.id)
+            status = getattr(member, "status", None)
+            if status not in {"member", "creator", "administrator"}:
+                join_url = f"https://t.me/{channel.lstrip('@')}"
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📢 عضویت در کانال", url=join_url)],
+                    [InlineKeyboardButton(text="من عضو شدم ✅", callback_data="chk:chan")],
+                ])
+                await cb.message.answer("برای ادامه خرید، ابتدا در کانال عضو شوید و سپس دوباره تلاش کنید.", reply_markup=kb)
+                await cb.answer()
+                return
+        except Exception:
+            pass
+    # Stage 2: Phone verification gate
+    pv_enabled = False
+    try:
+        async with session_scope() as session:
+            row = await session.scalar(Setting.__table__.select().where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
+            if row and str(row.value).strip() in {"1", "true", "True"}:
+                pv_enabled = True
+            if pv_enabled:
+                row_v = await session.scalar(Setting.__table__.select().where(Setting.key == f"USER:{cb.from_user.id}:PHONE_VERIFIED_AT"))
+                verified = bool(row_v and str(row_v.value).strip())
+                if not verified and not is_admin_user:
+                    # Ask for contact share
+                    rk = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="📱 ارسال شماره من", request_contact=True)]], resize_keyboard=True, one_time_keyboard=True)
+                    await cb.message.answer("برای ادامه خرید، لطفاً شماره تلگرام خود را ارسال کنید.", reply_markup=rk)
+                    await cb.answer()
+                    return
+    except Exception:
+        pass
     # Wallet-aware purchase
     async with session_scope() as session:
         plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
