@@ -45,13 +45,13 @@ async def create_user_minimal(username: str, note: str = "") -> Dict[str, Any]:
             "note": note,
         }
         try:
-            resp = await client._request("POST", "/api/user", json=payload)
-            return resp.json()
-        except httpx.HTTPStatusError as e:
-            if e.response is not None and e.response.status_code == 409:
-                # already exists → return current
+            # allow 409 to pass through without raising/logging; we'll fallback to GET
+            resp = await client._request("POST", "/api/user", allowed_statuses={409}, json=payload)
+            if resp.status_code == 409:
                 resp = await client._request("GET", f"/api/user/{username}")
-                return resp.json()
+            return resp.json()
+        except httpx.HTTPStatusError:
+            # other HTTP errors propagate
             raise
     finally:
         await client.aclose()

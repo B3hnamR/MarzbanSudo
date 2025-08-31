@@ -449,6 +449,10 @@ Outcome: Simpler, robust purchase path with immediate provisioning on sufficient
 - Fixes
   - Implemented missing _get_max_topup_value and corrected NameError in wallet settings.
   - Corrected minor Persian text corruptions (بدون سقف، ندارید، به‌روزرسانی).
+  - Fixed admin custom min/max flow capturing: admin intents are now prioritized and handled by a dedicated numeric handler; widened numeric regex to accept 0 for clearing max; cleared lingering plan intents when entering wallet settings to prevent cross-capture.
+
+- Stability (Marzban 409 on create)
+  - Suppressed noisy error logs for expected 409 Conflict on POST /api/user when user already exists; treat 409 as allowed and fallback to GET the existing user.
 
 - Next
   - Next milestone per Roadmap: send configurations directly after payment (MVP), delivering client-ready links/files upon approval/purchase.

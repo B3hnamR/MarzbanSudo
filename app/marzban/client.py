@@ -62,7 +62,7 @@ class MarzbanClient:
             headers["Authorization"] = f"Bearer {self._auth.access_token}"
         return headers
 
-    async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+    async def _request(self, method: str, path: str, allowed_statuses: Optional[set[int]] = None, **kwargs: Any) -> httpx.Response:
         await self._ensure_token()
         url = f"{self.base_url}{path}"
         last_exc: Optional[Exception] = None
@@ -82,6 +82,9 @@ class MarzbanClient:
                         logging.warning("Retryable status %s on %s %s, attempt %d/%d, sleeping %.2fs", resp.status_code, method, url, attempt, self._max_attempts, delay)
                         await asyncio.sleep(delay)
                         continue
+                # Allow certain statuses to pass through without raising/logging (e.g., 409 conflict on create)
+                if allowed_statuses and resp.status_code in allowed_statuses:
+                    return resp
                 resp.raise_for_status()
                 return resp
             except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteError, httpx.ReadError, httpx.TransportError, httpx.TimeoutException) as e:  # type: ignore[attr-defined]
