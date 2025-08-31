@@ -38,7 +38,7 @@ async def handle_orders(message: Message) -> None:
         if not rows:
             await message.answer("سفارشی ثبت نشده است.")
             return
-        lines = []
+        lines = ["📦 سفارش‌های من (آخرین 10 مورد)"]
         for o, p in rows:
             # Title from plan or snapshot
             title = p.title if p else (o.plan_title or "-")
@@ -60,10 +60,14 @@ async def handle_orders(message: Message) -> None:
                 "failed": "❌",
                 "cancelled": "🚫",
             }.get(st, "ℹ️")
+            provider_emoji = {
+                "wallet": "👛",
+                "manual_transfer": "🧾",
+            }.get((o.provider or "").lower(), "🔗")
             paperclip = "📎" if o.receipt_file_path else ""
             created_str = o.created_at.strftime("%Y-%m-%d %H:%M") if getattr(o, "created_at", None) else "-"
-            lines.append(f"{st_emoji} #{o.id} • {title} • {amount_str} • {created_str} {paperclip}")
-        await message.answer("آخرین سفارش‌ها:\n" + "\n".join(lines))
+            lines.append(f"{st_emoji} #{o.id} • {title} • {amount_str} • {created_str} • {provider_emoji} {paperclip}")
+        await message.answer("\n".join(lines))
         # نمایش دکمه Attach/Replace برای سفارش‌های در انتظار (فقط عکس/فایل)
         for o, p in rows:
             if o.status == "pending":

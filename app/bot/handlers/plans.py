@@ -162,7 +162,7 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
         return
     price_irr = Decimal(str(plan.price or 0))
     tmn = int(price_irr/Decimal('10')) if price_irr > 0 else 0
-    text = f"آیا از خرید پلن زیر اطمینان د��رید؟\n\n🧩 {plan.title}\n💵 مبلغ: {tmn:,} تومان"
+    text = f"آیا از خرید پلن زیر اطمینان دارید؟\n\n🧩 {plan.title}\n💵 مبلغ: {tmn:,} تومان"
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تایید ✅", callback_data=f"plan:confirm:{tpl_id}"), InlineKeyboardButton(text="انصراف ❌", callback_data="plan:cancel")]])
     await cb.message.answer(text, reply_markup=kb)
     await cb.answer()
