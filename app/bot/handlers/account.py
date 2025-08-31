@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Tuple
 
 from aiogram import Router, F
+import httpx
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select, func
@@ -106,8 +107,19 @@ async def handle_account(message: Message) -> None:
     if not message.from_user:
         return
     await message.answer("در حال دریافت اطلاعات اکانت...")
-    text, token, links = await _render_account_text(message.from_user.id)
-    await message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
+    try:
+        text, token, links = await _render_account_text(message.from_user.id)
+        await message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code if e.response is not None else None
+        if status == 404:
+            await message.answer(
+                "ا��انت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید."
+            )
+        else:
+            await message.answer("خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")
+    except Exception:
+        await message.answer("اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
 
 
 @router.callback_query(F.data == "acct:refresh")
@@ -115,12 +127,25 @@ async def cb_account_refresh(cb: CallbackQuery) -> None:
     if not cb.from_user:
         await cb.answer()
         return
-    text, token, links = await _render_account_text(cb.from_user.id)
     try:
-        await cb.message.edit_text(text, reply_markup=_acct_kb(bool(token), bool(links)))
+        text, token, links = await _render_account_text(cb.from_user.id)
+        try:
+            await cb.message.edit_text(text, reply_markup=_acct_kb(bool(token), bool(links)))
+        except Exception:
+            await cb.message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
+        await cb.answer("Updated")
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code if e.response is not None else None
+        if status == 404:
+            await cb.message.answer(
+                "اکانت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید."
+            )
+        else:
+            await cb.message.answer("خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")
+        await cb.answer()
     except Exception:
-        await cb.message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
-    await cb.answer("Updated")
+        await cb.message.answer("اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
+        await cb.answer()
 
 
 @router.callback_query(F.data == "acct:links")
