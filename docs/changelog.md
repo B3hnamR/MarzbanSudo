@@ -456,3 +456,46 @@ Outcome: Simpler, robust purchase path with immediate provisioning on sufficient
 
 - Next
   - Next milestone per Roadmap: send configurations directly after payment (MVP), delivering client-ready links/files upon approval/purchase.
+
+---
+
+## 2025-08-31 – UX and Admin enhancements (Wallet, Orders, Account, Plans)
+
+- Plans / Purchase UX
+  - Added confirmation step before wallet purchase with fixed Persian text: «آیا از خرید پلن زیر اطمینان دارید؟».
+  - On successful wallet purchase or admin approval, deliver configuration package to the user:
+    - Subscription link, v2ray, JSON links, direct text configs (chunked with blank lines), QR for subscription, and inline buttons «👤 مدیریت اکانت» و «📋 کپی همه».
+
+- Orders view (user)
+  - Renamed UI label to «📦 سفارش‌های من» and limited the list to the caller’s own orders (last 10).
+  - Improved formatting: status emoji (🕒/💳/✅/❌/🚫), order id, title (snapshotted fallback), amount in Tomans for IRR, timestamp, provider icon (👛 کیف‌پول / 🧾 دستی), and 📎 if receipt exists.
+
+- Account page
+  - Fixed RTL rendering for Telegram ID by prefixing with a direction mark to avoid LTR mixing in Persian text.
+  - «📄 کانفیگ‌ها (متنی)» now sends all configs in a single message when possible with blank-line separators and shows «📋 کپی همه». If too long, falls back to chunks while keeping the copy-all option.
+
+- Wallet moderation and policy
+  - Added Reject-with-Reason flow:
+    - New button «رد با دلیل 📝» on admin pending top-up cards (both list and forwarded messages).
+    - Prompts admin for a one-step textual reason, stores it in WalletTopUp.note, updates status to rejected, logs audit with reason, notifies the user, and appends “رد شد ❌ + دلیل” to the original admin message (caption/text preserved).
+  - Manual wallet credit by admin – two modes:
+    - Slash commands:
+      - /admin_wallet_add <username|telegram_id> <amount_IRR>
+      - /admin_wallet_add_tmn <username|telegram_id> <amount_TMN>
+    - UI flow (button «➕ شارژ دستی»):
+      - Step 1: ask for username or Telegram ID.
+      - Step 2: select unit (تومان/ریال).
+      - Step 3: amount input, then credit, audit, notify user, and show new balance to admin.
+  - Fixed and normalized Persian UI strings (تومان, ندارید, به‌روزرسانی, ...).
+  - Continued enforcement of min/max top-up policies with interactive admin settings.
+
+- Admin and access gates
+  - Admin start keyboard additions: «💼 تنظیمات کیف پول»، «📦 سفارش‌های اخیر»، و «➕ شارژ دستی».
+  - Channel membership gate for /start (optional via REQUIRED_CHANNEL) with re-check button.
+  - Phone verification (toggleable via settings) gates purchase; users must share their Telegram contact before buying when enabled.
+
+- Stability & Interop
+  - Safe handling of Marzban 409 on user create in the client and provisioning paths (treat as existent and continue).
+  - Media caption/text edit fallbacks to avoid Telegram “no caption” errors when updating admin cards.
+
+Outcome: Streamlined wallet-based purchase with clear confirmations, richer account/orders UIs, robust admin moderation (including reasoned rejections), and convenient admin wallet crediting via both slash commands and guided UI.
