@@ -88,6 +88,56 @@ async def cb_wallet_custom(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
+# Dedicated handler for admin numeric inputs (min/max intents)
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and ( _WALLET_ADMIN_MIN_INTENT.get(m.from_user.id, False) or _WALLET_ADMIN_MAX_INTENT.get(m.from_user.id, False) ) and isinstance(getattr(m, "text", None), str) and __import__("re").match(r"^\d{1,10}$", m.text))
+async def admin_wallet_limits_numeric_input(message: Message) -> None:
+    uid = message.from_user.id if message.from_user else None
+    if not await has_capability_async(uid, CAP_WALLET_MODERATE):
+        _WALLET_ADMIN_MIN_INTENT.pop(uid, None)
+        _WALLET_ADMIN_MAX_INTENT.pop(uid, None)
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    try:
+        toman_val = int(message.text.strip())
+    except Exception:
+        await message.answer("مبلغ نامعتبر است. یک عدد صحیح ارسال کنید.")
+        return
+    # MIN intent
+    if _WALLET_ADMIN_MIN_INTENT.pop(uid, False):
+        if toman_val <= 0:
+            await message.answer("مبلغ نامعتبر است. یک عدد صحیح ارسال کنید.")
+            return
+        irr = toman_val * 10
+        async with session_scope() as session:
+            row = await session.scalar(select(Setting).where(Setting.key == "MIN_TOPUP_IRR"))
+            if not row:
+                row = Setting(key="MIN_TOPUP_IRR", value=str(int(irr)))
+                session.add(row)
+            else:
+                row.value = str(int(irr))
+            await session.commit()
+        await message.answer(f"حداقل مبلغ شارژ تنظیم شد: {toman_val:,} تومان")
+        await admin_wallet_settings_menu(message)
+        return
+    # MAX intent
+    if _WALLET_ADMIN_MAX_INTENT.pop(uid, False):
+        async with session_scope() as session:
+            row = await session.scalar(select(Setting).where(Setting.key == "MAX_TOPUP_IRR"))
+            if toman_val == 0:
+                if row:
+                    await session.delete(row)
+            else:
+                irr = toman_val * 10
+                if not row:
+                    row = Setting(key="MAX_TOPUP_IRR", value=str(int(irr)))
+                    session.add(row)
+                else:
+                    row.value = str(int(irr))
+            await session.commit()
+        await message.answer("سقف حداکثر شارژ به‌روزرسانی شد.")
+        await admin_wallet_settings_menu(message)
+        return
+
 @router.message(F.text.regexp(r"^\d{1,10}$"))
 async def handle_wallet_custom_amount(message: Message) -> None:
     if not message.from_user:
@@ -163,7 +213,7 @@ async def handle_wallet_custom_amount(message: Message) -> None:
         return
     if max_irr is not None and rial > max_irr:
         await message.answer(
-            f"حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است. لطفاً مبلغ کم��ری وارد کنید."
+            f"حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است. لطفاً مبلغ کمتری وارد کنید."
         )
         _TOPUP_INTENT[uid] = Decimal("-1")
         return
@@ -386,6 +436,15 @@ async def admin_wallet_settings_menu(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("شما دسترسی ادمین ندارید.")
         return
+    # Best-effort: cancel any lingering plan management intents to avoid cross-capture of inputs
+    try:
+        from app.bot.handlers import admin_manage as _am
+        uid = message.from_user.id
+        _am._APLANS_CREATE_INTENT.pop(uid, None)
+        _am._APLANS_FIELD_INTENT.pop(uid, None)
+        _am._APLANS_PRICE_INTENT.pop(uid, None)
+    except Exception:
+        pass
     async with session_scope() as session:
         min_irr = await _get_min_topup_value(session)
         max_irr = await _get_max_topup_value(session)
@@ -444,6 +503,14 @@ async def cb_walletadmin_min_custom(cb: CallbackQuery) -> None:
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     _WALLET_ADMIN_MIN_INTENT[cb.from_user.id] = True
+    # Cancel plan create/edit intents if any
+    try:
+        from app.bot.handlers import admin_manage as _am
+        _am._APLANS_CREATE_INTENT.pop(cb.from_user.id, None)
+        _am._APLANS_FIELD_INTENT.pop(cb.from_user.id, None)
+        _am._APLANS_PRICE_INTENT.pop(cb.from_user.id, None)
+    except Exception:
+        pass
     await cb.message.answer("مبلغ دلخواه را به تومان ارسال کنید (مثلاً 150000 برای ۱۵۰ هزار تومان).")
     await cb.answer()
 
@@ -454,6 +521,14 @@ async def cb_walletadmin_max_custom(cb: CallbackQuery) -> None:
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     _WALLET_ADMIN_MAX_INTENT[cb.from_user.id] = True
+    # Cancel plan create/edit intents if any
+    try:
+        from app.bot.handlers import admin_manage as _am
+        _am._APLANS_CREATE_INTENT.pop(cb.from_user.id, None)
+        _am._APLANS_FIELD_INTENT.pop(cb.from_user.id, None)
+        _am._APLANS_PRICE_INTENT.pop(cb.from_user.id, None)
+    except Exception:
+        pass
     await cb.message.answer("حداکثر مبلغ را به تومان ارسال کنید (برای حذف سقف 0 وارد کنید).")
     await cb.answer()
 
