@@ -88,11 +88,61 @@ async def cb_wallet_custom(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text.regexp(r"^\d{4,10}$"))
+@router.message(F.text.regexp(r"^\d{1,10}$"))
 async def handle_wallet_custom_amount(message: Message) -> None:
     if not message.from_user:
         return
-    if message.from_user.id not in _TOPUP_INTENT or _TOPUP_INTENT[message.from_user.id] != Decimal("-1"):
+    uid = message.from_user.id
+    # Admin intents (set min/max) take precedence over user top-up intent
+    if _WALLET_ADMIN_MIN_INTENT.get(uid, False) or _WALLET_ADMIN_MAX_INTENT.get(uid, False):
+        if not await has_capability_async(uid, CAP_WALLET_MODERATE):
+            _WALLET_ADMIN_MIN_INTENT.pop(uid, None)
+            _WALLET_ADMIN_MAX_INTENT.pop(uid, None)
+            await message.answer("شما دسترسی ادمین ندارید.")
+            return
+        # Parse integer Toman
+        try:
+            toman_val = int(message.text.strip())
+        except Exception:
+            await message.answer("مبلغ نامعتبر است. یک عدد صحیح ارسال کنید.")
+            return
+        # Handle MIN intent
+        if _WALLET_ADMIN_MIN_INTENT.pop(uid, False):
+            if toman_val <= 0:
+                await message.answer("مبلغ نامعتبر است. یک عدد صحیح ارسال کنید.")
+                return
+            irr = toman_val * 10
+            async with session_scope() as session:
+                row = await session.scalar(select(Setting).where(Setting.key == "MIN_TOPUP_IRR"))
+                if not row:
+                    row = Setting(key="MIN_TOPUP_IRR", value=str(int(irr)))
+                    session.add(row)
+                else:
+                    row.value = str(int(irr))
+                await session.commit()
+            await message.answer(f"حداقل مبلغ شارژ تنظیم شد: {toman_val:,} تومان")
+            await admin_wallet_settings_menu(message)
+            return
+        # Handle MAX intent
+        if _WALLET_ADMIN_MAX_INTENT.pop(uid, False):
+            async with session_scope() as session:
+                row = await session.scalar(select(Setting).where(Setting.key == "MAX_TOPUP_IRR"))
+                if toman_val == 0:
+                    if row:
+                        await session.delete(row)
+                else:
+                    irr = toman_val * 10
+                    if not row:
+                        row = Setting(key="MAX_TOPUP_IRR", value=str(int(irr)))
+                        session.add(row)
+                    else:
+                        row.value = str(int(irr))
+                await session.commit()
+            await message.answer("سقف حداکثر شارژ به‌روزرسانی شد.")
+            await admin_wallet_settings_menu(message)
+            return
+    # User top-up custom amount path (requires prior intent marker)
+    if uid not in _TOPUP_INTENT or _TOPUP_INTENT[uid] != Decimal("-1"):
         return
     try:
         toman = Decimal(message.text)
@@ -109,15 +159,15 @@ async def handle_wallet_custom_amount(message: Message) -> None:
         await message.answer(
             f"حداقل مبلغ شارژ {int(min_irr/Decimal('10')):,} تومان است. لطفاً مبلغ بیشتری وارد کنید."
         )
-        _TOPUP_INTENT[message.from_user.id] = Decimal("-1")
+        _TOPUP_INTENT[uid] = Decimal("-1")
         return
     if max_irr is not None and rial > max_irr:
         await message.answer(
-            f"حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است. لطفاً مبلغ کمتری وارد کنید."
+            f"حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است. لطفاً مبلغ کم��ری وارد کنید."
         )
-        _TOPUP_INTENT[message.from_user.id] = Decimal("-1")
+        _TOPUP_INTENT[uid] = Decimal("-1")
         return
-    _TOPUP_INTENT[message.from_user.id] = rial
+    _TOPUP_INTENT[uid] = rial
     await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس رسید پرداخت را ارسال کنید.")
 
 
