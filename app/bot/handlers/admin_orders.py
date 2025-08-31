@@ -8,6 +8,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select, update
+from decimal import Decimal
 
 from app.db.session import session_scope
 from app.db.models import Order, User, Plan
@@ -18,6 +19,87 @@ from app.services.security import has_capability_async, CAP_ORDERS_MODERATE
 from app.marzban.client import get_client
 
 router = Router()
+
+PAGE_SIZE_RECENT = 10
+
+
+def _status_emoji(st: str) -> str:
+    s = (st or "").lower()
+    return {
+        "pending": "🕒",
+        "paid": "💳",
+        "provisioned": "✅",
+        "failed": "❌",
+        "cancelled": "🚫",
+    }.get(s, "ℹ️")
+
+
+def _amount_label(amount, currency: str | None) -> str:
+    if amount is not None and (currency or "").upper() == "IRR":
+        try:
+            tmn = int(Decimal(str(amount)) / Decimal("10"))
+            return f"{tmn:,} تومان"
+        except Exception:
+            return f"{amount} {currency}"
+    return f"{amount} {currency}" if amount is not None else "-"
+
+
+@router.message(F.text == "📦 سفارش‌های اخیر")
+async def admin_orders_recent(message: Message) -> None:
+    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_ORDERS_MODERATE)):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    page = 1
+    await _send_recent_orders_page(message, page)
+
+
+@router.callback_query(F.data.startswith("admin:orders:page:"))
+async def cb_admin_orders_page(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_ORDERS_MODERATE)):
+        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        return
+    try:
+        page = int(cb.data.split(":")[3])
+    except Exception:
+        page = 1
+    await _send_recent_orders_page(cb.message, page)
+    await cb.answer()
+
+
+async def _send_recent_orders_page(target, page: int) -> None:
+    # target can be Message or CallbackQuery.message
+    if page < 1:
+        page = 1
+    async with session_scope() as session:
+        # Fetch one extra to detect next page
+        stmt = (
+            select(Order, User, Plan)
+            .join(User, Order.user_id == User.id)
+            .outerjoin(Plan, Order.plan_id == Plan.id)
+            .order_by(Order.created_at.desc())
+            .offset((page - 1) * PAGE_SIZE_RECENT)
+            .limit(PAGE_SIZE_RECENT + 1)
+        )
+        rows_all = (await session.execute(stmt)).all()
+    has_next = len(rows_all) > PAGE_SIZE_RECENT
+    rows = rows_all[:PAGE_SIZE_RECENT]
+    if not rows:
+        await target.answer("سفارشی برای نمایش وجود ندارد.")
+        return
+    lines = [f"📦 سفارش‌های اخیر • صفحه {page}"]
+    for o, u, p in rows:
+        title = p.title if p else (o.plan_title or "-")
+        amount_str = _amount_label(o.amount, o.currency)
+        ts = o.created_at.strftime("%Y-%m-%d %H:%M") if getattr(o, "created_at", None) else "-"
+        lines.append(f"{_status_emoji(o.status)} #{o.id} • {title} • {amount_str} • {ts} • 👤 {u.marzban_username} (tg:{u.telegram_id})")
+    # Nav buttons
+    nav = []
+    if page > 1:
+        nav.append(InlineKeyboardButton(text="◀️ قبلی", callback_data=f"admin:orders:page:{page-1}"))
+    if has_next:
+        nav.append(InlineKeyboardButton(text="بعدی ▶️", callback_data=f"admin:orders:page:{page+1}"))
+    kb = InlineKeyboardMarkup(inline_keyboard=[nav] if nav else [])
+    await target.answer("\n".join(lines), reply_markup=kb)
 
 
 

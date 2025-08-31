@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.bot.handlers.plans import handle_plans as plans_handler
 from app.bot.handlers.orders import handle_orders as orders_handler
 from app.bot.handlers.account import handle_account as account_handler
-from app.bot.handlers.admin_orders import admin_orders_pending as admin_pending_handler
+from app.bot.handlers.admin_orders import admin_orders_pending as admin_pending_handler, admin_orders_recent as admin_recent_handler
 from app.bot.handlers.admin_manage import admin_show_plans_menu as admin_plans_menu_handler
 from app.bot.handlers.wallet import wallet_menu as wallet_menu_handler, admin_wallet_pending_topups as wallet_pending_handler
 
@@ -49,7 +49,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌ها")],
             [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="💳 کیف پول")],
             [KeyboardButton(text="💳 درخواست‌های شارژ"), KeyboardButton(text="💼 تنظیمات کیف پول")],
-            [KeyboardButton(text="⚙️ مدیریت پلن‌ها")],
+            [KeyboardButton(text="⚙️ مدیریت پلن‌ها"), KeyboardButton(text="📦 سفارش‌های اخیر")],
             [KeyboardButton(text="📱 تنظیمات احراز شماره")],
         ], resize_keyboard=True
     )
@@ -122,6 +122,11 @@ async def _btn_admin_wallet_pending(message: Message) -> None:
 @router.message(F.text == "⚙️ مدیریت پلن‌ها")
 async def _btn_admin_plans_manage(message: Message) -> None:
     await admin_plans_menu_handler(message)
+
+
+@router.message(F.text == "📦 سفارش‌های اخیر")
+async def _btn_admin_recent_orders(message: Message) -> None:
+    await admin_recent_handler(message)
 
 
 @router.callback_query(F.data == "chk:chan")
