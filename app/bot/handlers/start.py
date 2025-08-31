@@ -15,7 +15,7 @@ from app.bot.handlers.orders import handle_orders as orders_handler
 from app.bot.handlers.account import handle_account as account_handler
 from app.bot.handlers.admin_orders import admin_orders_pending as admin_pending_handler, admin_orders_recent as admin_recent_handler
 from app.bot.handlers.admin_manage import admin_show_plans_menu as admin_plans_menu_handler
-from app.bot.handlers.wallet import wallet_menu as wallet_menu_handler, admin_wallet_pending_topups as wallet_pending_handler
+from app.bot.handlers.wallet import wallet_menu as wallet_menu_handler, admin_wallet_pending_topups as wallet_pending_handler, admin_wallet_manual_add_start as wallet_manual_add_start
 
 router = Router()
 
@@ -46,11 +46,11 @@ def _user_keyboard() -> ReplyKeyboardMarkup:
 def _admin_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌ها")],
+            [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌های من")],
             [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="💳 کیف پول")],
             [KeyboardButton(text="💳 درخواست‌های شارژ"), KeyboardButton(text="💼 تنظیمات کیف پول")],
             [KeyboardButton(text="⚙️ مدیریت پلن‌ها"), KeyboardButton(text="📦 سفارش‌های اخیر")],
-            [KeyboardButton(text="📱 تنظیمات احراز شماره")],
+            [KeyboardButton(text="📱 تنظیمات احراز شماره"), KeyboardButton(text="➕ شارژ دستی")],
         ], resize_keyboard=True
     )
 
@@ -98,7 +98,7 @@ async def _btn_plans(message: Message) -> None:
     await plans_handler(message)
 
 
-@router.message(F.text == "📦 سفارش‌ها")
+@router.message(F.text.in_({"📦 سفارش‌ها", "📦 سفارش‌های من"}))
 async def _btn_orders(message: Message) -> None:
     await orders_handler(message)
 
@@ -111,6 +111,11 @@ async def _btn_account(message: Message) -> None:
 @router.message(F.text == "💳 کیف پول")
 async def _btn_wallet(message: Message) -> None:
     await wallet_menu_handler(message)
+
+
+@router.message(F.text == "➕ شارژ دستی")
+async def _btn_wallet_manual_add(message: Message) -> None:
+    await wallet_manual_add_start(message)
 
 
 @router.message(F.text == "💳 درخواست‌های شارژ")
