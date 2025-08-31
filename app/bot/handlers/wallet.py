@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -45,7 +45,7 @@ async def admin_wallet_pending_topups(message: Message) -> None:
             f"مبلغ: {tmn:,} تومان\n"
             f"ثبت: {topup.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Approve ✅", callback_data=f"wallet:approve:{topup.id}"), InlineKeyboardButton(text="Reject ❌", callback_data=f"wallet:reject:{topup.id}")]])
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Approve ✅", callback_data=f"wallet:approve:{topup.id}"), InlineKeyboardButton(text="Reject ❌", callback_data=f"wallet:reject:{topup.id}"), InlineKeyboardButton(text="رد با دلیل 📝", callback_data=f"wallet:rejectr:{topup.id}")]])
         # Try to show original receipt media; fallback to text if sending media fails
         try:
             await message.bot.send_photo(chat_id=message.chat.id, photo=topup.receipt_file_id, caption=caption, reply_markup=kb)
@@ -70,6 +70,10 @@ _TOPUP_INTENT: Dict[int, Decimal] = {}
 _WALLET_ADMIN_MIN_INTENT: Dict[int, bool] = {}
 # Admin intent for setting maximum top-up (awaiting amount input)
 _WALLET_ADMIN_MAX_INTENT: Dict[int, bool] = {}
+# Admin intent for reject-with-reason: admin_id -> topup_id
+_WALLET_REJECT_REASON_INTENT: Dict[int, int] = {}
+# Context to edit original admin message: admin_id -> (chat_id, message_id)
+_WALLET_REJECT_REASON_CTX: Dict[int, Tuple[int, int]] = {}
 
 
 def _amount_options(min_amount: Decimal | None) -> List[Decimal]:
@@ -349,7 +353,7 @@ async def handle_wallet_photo(message: Message) -> None:
             f"User: {user.marzban_username} (tg:{user.telegram_id})\n"
             f"Amount: {int(amount/10):,} تومان\n"
         )
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Approve ✅", callback_data=f"wallet:approve:{topup.id}"), InlineKeyboardButton(text="Reject ❌", callback_data=f"wallet:reject:{topup.id}")]])
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Approve ✅", callback_data=f"wallet:approve:{topup.id}"), InlineKeyboardButton(text="Reject ❌", callback_data=f"wallet:reject:{topup.id}"), InlineKeyboardButton(text="رد با دلیل 📝", callback_data=f"wallet:rejectr:{topup.id}")]])
         for aid in admin_ids:
             try:
                 if is_photo:
@@ -358,6 +362,71 @@ async def handle_wallet_photo(message: Message) -> None:
                     await message.bot.send_document(chat_id=aid, document=file_id, caption=caption, reply_markup=kb)
             except Exception:
                 pass
+
+
+@router.callback_query(F.data.startswith("wallet:rejectr:"))
+async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("شما ��سترسی ادمین ندارید.", show_alert=True)
+        return
+    try:
+        topup_id = int(cb.data.split(":")[2])
+    except Exception:
+        await cb.answer("شناسه نامعتبر", show_alert=True)
+        return
+    _WALLET_REJECT_REASON_INTENT[cb.from_user.id] = topup_id
+    _WALLET_REJECT_REASON_CTX[cb.from_user.id] = (cb.message.chat.id, cb.message.message_id)
+    await cb.message.answer("لطفاً دلیل رد درخواست را ارسال کنید (یک پیام متنی).")
+    await cb.answer()
+
+
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and isinstance(getattr(m, "text", None), str) and m.from_user.id in _WALLET_REJECT_REASON_INTENT)
+async def admin_wallet_reject_with_reason_text(message: Message) -> None:
+    admin_id = message.from_user.id if message.from_user else None
+    if not admin_id or not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
+        _WALLET_REJECT_REASON_INTENT.pop(admin_id, None)
+        _WALLET_REJECT_REASON_CTX.pop(admin_id, None)
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    reason = message.text.strip()
+    topup_id = _WALLET_REJECT_REASON_INTENT.pop(admin_id, None)
+    ctx = _WALLET_REJECT_REASON_CTX.pop(admin_id, None)
+    if not topup_id:
+        return
+    user_telegram_id = None
+    async with session_scope() as session:
+        row = await session.execute(select(WalletTopUp, User).join(User, WalletTopUp.user_id == User.id).where(WalletTopUp.id == topup_id))
+        data = row.first()
+        if not data:
+            await message.answer("TopUp not found")
+            return
+        topup, user = data
+        res = await session.execute(
+            update(WalletTopUp)
+            .where(WalletTopUp.id == topup_id, WalletTopUp.status == "pending")
+            .values(status="rejected", admin_id=admin_id, note=reason, processed_at=datetime.utcnow())
+            .execution_options(synchronize_session=False)
+        )
+        if (res.rowcount or 0) == 0:
+            await message.answer("این درخواست قبلاً رسیدگی شده است.")
+            return
+        await log_audit(session, actor="admin", action="wallet_topup_rejected", target_type="wallet_topup", target_id=topup.id, meta=str({"admin_id": admin_id, "reason": reason}))
+        user_telegram_id = user.telegram_id
+        await session.commit()
+    try:
+        await message.bot.send_message(chat_id=user_telegram_id, text=f"درخواست شارژ شما رد شد. دلیل: {reason}")
+    except Exception:
+        pass
+    if ctx:
+        chat_id, msg_id = ctx
+        try:
+            await message.bot.edit_message_caption(chat_id=chat_id, message_id=msg_id, caption=(message.chat.full_name if False else "") + f"رد شد ❌\nدلیل: {reason}")
+        except Exception:
+            try:
+                await message.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"رد شد ❌\nدلیل: {reason}")
+            except Exception:
+                pass
+    await message.answer("رد شد و دلیل به کاربر اطلاع داده شد.")
 
 
 @router.callback_query(F.data.startswith("wallet:approve:"))
@@ -752,20 +821,68 @@ async def admin_wallet_add(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
-        await message.answer("فرمت: /admin_wallet_add <username> <amount>")
+        await message.answer("فرمت: /admin_wallet_add <username|telegram_id> <amount_IRR>")
         return
-    username = parts[1].strip()
+    ref = parts[1].strip()
     try:
         amount = Decimal(parts[2])
     except Exception:
         await message.answer("مبلغ نامعتبر است.")
         return
     async with session_scope() as session:
-        user = await session.scalar(select(User).where(User.marzban_username == username))
+        user = None
+        if ref.isdigit():
+            user = await session.scalar(select(User).where(User.telegram_id == int(ref)))
+        else:
+            user = await session.scalar(select(User).where(User.marzban_username == ref))
         if not user:
             await message.answer("کاربر یافت نشد.")
             return
         user.balance = (Decimal(user.balance or 0) + amount)
         await log_audit(session, actor="admin", action="wallet_manual_add", target_type="user", target_id=user.id, meta=str({"amount": str(amount)}))
         await session.commit()
-    await message.answer(f"اضافه شد. موجودی جدید {username}: {int((user.balance or 0)/10):,} تومان")
+    try:
+        tmn_add = int((amount/Decimal('10')).to_integral_value())
+        new_tmn = int((Decimal(user.balance or 0)/Decimal('10')).to_integral_value())
+        await message.bot.send_message(chat_id=user.telegram_id, text=f"✅ شارژ دستی توسط ادمین: +{tmn_add:,} تومان\nموجودی جدید: {new_tmn:,} تومان")
+    except Exception:
+        pass
+    await message.answer(f"انجام شد. موجودی جدید {user.marzban_username}: {int((user.balance or 0)/10):,} تومان")
+
+
+@router.message(F.text.startswith("/admin_wallet_add_tmn "))
+async def admin_wallet_add_tmn(message: Message) -> None:
+    if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
+        await message.answer("شما دسترسی ادمین ندارید.")
+        return
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer("فرمت: /admin_wallet_add_tmn <username|telegram_id> <amount_TMN>")
+        return
+    ref = parts[1].strip()
+    try:
+        tmn = Decimal(parts[2])
+        if tmn <= 0:
+            raise ValueError
+    except Exception:
+        await message.answer("مبلغ نامعتبر است.")
+        return
+    amount = tmn * Decimal('10')
+    async with session_scope() as session:
+        user = None
+        if ref.isdigit():
+            user = await session.scalar(select(User).where(User.telegram_id == int(ref)))
+        else:
+            user = await session.scalar(select(User).where(User.marzban_username == ref))
+        if not user:
+            await message.answer("کاربر یافت نشد.")
+            return
+        user.balance = (Decimal(user.balance or 0) + amount)
+        await log_audit(session, actor="admin", action="wallet_manual_add", target_type="user", target_id=user.id, meta=str({"amount": str(amount)}))
+        await session.commit()
+    try:
+        new_tmn = int((Decimal(user.balance or 0)/Decimal('10')).to_integral_value())
+        await message.bot.send_message(chat_id=user.telegram_id, text=f"✅ شارژ دستی توسط ادمین: +{int(tmn):,} تومان\nموجودی جدید: {new_tmn:,} تومان")
+    except Exception:
+        pass
+    await message.answer(f"انجام شد. موجودی جدید {user.marzban_username}: {int((user.balance or 0)/10):,} تومان")
