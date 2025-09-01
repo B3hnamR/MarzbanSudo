@@ -502,6 +502,27 @@ Outcome: Streamlined wallet-based purchase with clear confirmations, richer acco
 
 ---
 
+## 2025-09-01 – Admin Users management, fixes, and gating improvements
+
+- Admin Users module (UI):
+  - New: app/bot/handlers/admin_users.py — Manage users: list (all/buyers), search (username/tg_id/phone tail), view details (username, tg_id, phone, balance, orders), and actions (ban/unban, wallet top-up, add GB, extend days, reset, revoke, delete), and grant plan to user.
+  - Summary header shows live counts: total users, buyers, total orders, active/disabled, pending/approved top-ups.
+  - Buttons layout switched to single-column for readability.
+  - Robust input handling: numeric admin intents and search are isolated; starting a numeric op clears search; numeric handler ignores when search is active.
+  - Search input sanitized (strips RTL marks, spaces, dashes, '+'); numeric-only input checks tg_id first, then phone-tail matches.
+  - User notifications added for admin actions (ban/unban, credit, add GB, extend days, reset/revoke/delete).
+
+- Start handler:
+  - Auto-create DB user on /start (if missing) and fixed corrupted label 'من عضو شدم ✅'.
+
+- Router ordering:
+  - app/main.py includes admin_users before wallet to ensure numeric handlers capture admin intents before wallet's generic numeric handler.
+
+- Text fixes:
+  - Corrected Persian strings in users summary: '📦 مجموع سفارش‌ها', '🛍️ خریداران'.
+
+Outcome: Admin can search/manage users reliably, perform numeric operations with deterministic handling, and users receive notifications for admin-side changes. UI labels and layout corrected for Persian.
+
 ## 2025-09-01 – Fixes & Ops: stability, env alignment, and maintainability
 
 - Fix (admin orders): Safely update admin moderation messages for media posts

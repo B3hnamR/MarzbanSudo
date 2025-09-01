@@ -83,8 +83,10 @@ async def main() -> None:
     dp.include_router(orders_handlers.router)
     dp.include_router(admin_orders_handlers.router)
     dp.include_router(trial_handlers.router)
-    dp.include_router(wallet_handlers.router)
+    # Important: include admin_users before wallet to ensure its numeric handlers
+    # capture admin intents prior to wallet's generic numeric handler
     dp.include_router(admin_users_handlers.router)
+    dp.include_router(wallet_handlers.router)
 
     # Polling startup
     logging.info("Starting Telegram bot polling ...")
