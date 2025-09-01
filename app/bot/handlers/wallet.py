@@ -137,6 +137,11 @@ async def admin_wallet_pending_topups(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("شما دسترسی ادمین ندارید.")
         return
+    # Cancel any lingering manual-add intent to avoid cross-capture
+    try:
+        _WALLET_MANUAL_ADD_INTENT.pop(message.from_user.id, None)
+    except Exception:
+        pass
     async with session_scope() as session:
         rows = (
             await session.execute(
@@ -226,7 +231,7 @@ async def wallet_menu(message: Message) -> None:
             [InlineKeyboardButton(text=f"شارژ {int(a/10):,} تومان", callback_data=f"wallet:amt:{int(a)}")] for a in options
         ] + [[InlineKeyboardButton(text="مبلغ دلخواه", callback_data="wallet:custom")]])
         await message.answer(
-            f"موجودی کیف پول شما: {int(bal/10):,} تومان\nیکی از مبالغ زیر را انتخاب کنید یا مبلغ دلخواه را وارد کنید.",
+            f"👛 موجودی کیف پول شما: {int(bal/10):,} تومان\n⬇️ یکی از مبالغ زیر را انتخاب کنید یا مبلغ دلخواه را وارد کنید.",
             reply_markup=kb,
         )
 
@@ -674,6 +679,8 @@ async def admin_wallet_settings_menu(message: Message) -> None:
         _am._APLANS_CREATE_INTENT.pop(uid, None)
         _am._APLANS_FIELD_INTENT.pop(uid, None)
         _am._APLANS_PRICE_INTENT.pop(uid, None)
+        # Also clear manual wallet add intent to prevent cross-capture
+        _WALLET_MANUAL_ADD_INTENT.pop(uid, None)
     except Exception:
         pass
     async with session_scope() as session:
