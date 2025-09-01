@@ -327,8 +327,7 @@ async def cb_plan_mode_new(cb: CallbackQuery, tpl_id: int | None = None) -> None
         await cb.answer("پلن یافت نشد", show_alert=True)
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"استفاده از یوزرنیم فعلی: {username_eff}", callback_data=f"plan:uname:use:{t}")],
-        [InlineKeyboardButton(text="ساخت یوزرنیم رندوم", callback_data=f"plan:uname:rnd:{t}")],
+         [InlineKeyboardButton(text="ساخت یوزرنیم رندوم", callback_data=f"plan:uname:rnd:{t}")],
         [InlineKeyboardButton(text="یوزرنیم دلخواه ✏️", callback_data=f"plan:uname:cst:{t}")],
     ])
     await cb.message.answer("لطفاً روش انتخاب یوزرنیم را انتخاب کنید:", reply_markup=kb)

@@ -139,13 +139,27 @@ async def cb_users_list(cb: CallbackQuery) -> None:
         await cb.answer()
         return
     lines: List[str] = []
-    for u, oc, phone in rows:
-        lines.append(f"- 🆔 tg:{u.telegram_id} | 👤 {u.marzban_username or '-'}")
     prefix = "users:list:buyers" if buyers_only else "users:list:all"
     nav = _kb_users_pagination(prefix, page_i, pages)
     kb_rows: List[List[InlineKeyboardButton]] = []
+    # Fetch TG usernames from settings map for display
+    async with session_scope() as session:
+        settings_rows = (await session.execute(select(Setting).where(Setting.key.like("USER:%:TG_USERNAME")))).scalars().all()
+        tg_map: Dict[int, str] = {}
+        for r in settings_rows:
+            try:
+                tg_id = int(str(r.key).split(":")[1])
+                tg_map[tg_id] = str(r.value).strip().lstrip("@")
+            except Exception:
+                pass
+    for u, oc, phone in rows:
+        handle = tg_map.get(u.telegram_id)
+        handle_disp = f"@{handle}" if handle else "—"
+        lines.append(f"- 🆔 tg:{u.telegram_id} | 👤 {handle_disp}")
     for u, _, _ in rows:
-        kb_rows.append([InlineKeyboardButton(text=f"مدیریت tg:{u.telegram_id} | {u.marzban_username or '-'}", callback_data=f"users:view:{u.id}")])
+        handle = tg_map.get(u.telegram_id)
+        handle_disp = f"@{handle}" if handle else "—"
+        kb_rows.append([InlineKeyboardButton(text=f"مدیریت tg:{u.telegram_id} | {handle_disp}", callback_data=f"users:view:{u.id}")])
     if nav:
         kb_rows.append(nav)
     kb_rows.append([InlineKeyboardButton(text="⬅️ بازگشت", callback_data="users:menu")])
@@ -313,11 +327,12 @@ async def admin_users_numeric_inputs(message: Message) -> None:
         await message.answer(_admin_only())
         return
     async with session_scope() as session:
-        u = await session.scalar(select(User).where(User.id == uid))
-        if not u:
-            _USER_INTENTS.pop(admin_id, None)
-            await message.answer("کاربر یافت نشد.")
-            return
+        if not svc_intent:
+            u = await session.scalar(select(User).where(User.id == uid))
+            if not u:
+                _USER_INTENTS.pop(admin_id, None)
+                await message.answer("کاربر یافت نشد.")
+                return
         if svc_intent:
             # Service-specific numeric intents
             sop, suid, sid = svc_intent
@@ -476,6 +491,7 @@ async def cb_users_addgb_service(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("bad args", show_alert=True)
         return
+    _SEARCH_INTENT.pop(cb.from_user.id, None)
     _SVC_INTENTS[cb.from_user.id] = ("add_gb_svc", uid, sid)
     await cb.message.answer("مقدار حجم را به گیگابایت ارسال کنید (مثلاً 5 یا 1.5).")
     await cb.answer()
@@ -493,6 +509,7 @@ async def cb_users_extend_service(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("bad args", show_alert=True)
         return
+    _SEARCH_INTENT.pop(cb.from_user.id, None)
     _SVC_INTENTS[cb.from_user.id] = ("extend_days_svc", uid, sid)
     await cb.message.answer("تعداد روزهای تمدید را ارسال کنید (عدد صحیح).")
     await cb.answer()
