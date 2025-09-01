@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 import html
-from datetime import datetime
-from typing import List, Tuple
+import re
+from datetime import datetime, timedelta
+from typing import List, Tuple, Dict
 
 from aiogram import Router, F
 import httpx
@@ -12,12 +13,16 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from sqlalchemy import select, func
 
 from app.db.session import session_scope
-from app.db.models import User, Order
+from app.db.models import User, Order, Setting
 from app.marzban.client import get_client
 from app.services.marzban_ops import revoke_sub as marz_revoke_sub
+from app.services.marzban_ops import replace_user_username as ops_replace_username
 from app.utils.username import tg_username
 
 router = Router()
+
+# Rename intents/state
+_RENAME_CUSTOM_PENDING: Dict[int, bool] = {}
 
 
 def _fmt_gb2(v: int) -> str:
@@ -29,6 +34,7 @@ def _fmt_gb2(v: int) -> str:
 def _acct_kb(has_token: bool, has_links: bool) -> InlineKeyboardMarkup:
     rows: List[List[InlineKeyboardButton]] = []
     rows.append([InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="acct:refresh")])
+    rows.append([InlineKeyboardButton(text="✏️ تغییر یوزرنیم", callback_data="acct:rename")])
     if has_links:
         rows.append([
             InlineKeyboardButton(text="📄 کانفیگ‌ها (متنی)", callback_data="acct:links"),
@@ -314,3 +320,155 @@ async def cb_account_copy_all(cb: CallbackQuery) -> None:
         if chunk:
             await cb.message.answer((header if first else "") + "\n\n".join(chunk), parse_mode="HTML")
     await cb.answer("Ready to copy")
+
+
+# ===== Username rename flow (weekly limit) =====
+
+def _gen_username_random(tg_id: int) -> str:
+    import random, string
+    suffix = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(3))
+    return f"tg{tg_id}{suffix}"
+
+
+async def _can_rename_now(tg_id: int) -> Tuple[bool, str | None]:
+    # Returns (allowed, msg_if_blocked)
+    async with session_scope() as session:
+        row = await session.scalar(select(Setting).where(Setting.key == f"USER:{tg_id}:LAST_RENAME_AT"))
+    if not row:
+        return True, None
+    try:
+        last = datetime.fromisoformat(str(row.value))
+    except Exception:
+        return True, None
+    delta = datetime.utcnow() - last
+    if delta >= timedelta(days=7):
+        return True, None
+    remain = timedelta(days=7) - delta
+    days = remain.days
+    hours = remain.seconds // 3600
+    return False, f"⏳ امکان تغییر یوزرنیم هر ۷ روز یک‌بار است. زمان باقی‌مانده: {days} روز و {hours} ساعت."
+
+
+@router.callback_query(F.data == "acct:rename")
+async def cb_account_rename(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    allowed, msg = await _can_rename_now(cb.from_user.id)
+    if not allowed:
+        await cb.message.answer(msg or "فعلاً امکان تغییر یوزرنیم ندارید.")
+        await cb.answer()
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="ساخت یوزرنیم رندوم", callback_data="acct:rn:rnd")],
+        [InlineKeyboardButton(text="یوزرنیم دلخواه ✏️", callback_data="acct:rn:cst")],
+        [InlineKeyboardButton(text="انصراف ❌", callback_data="acct:rn:cancel")],
+    ])
+    await cb.message.answer("لطفاً روش تغییر یوزرنیم را انتخاب کنید:", reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "acct:rn:cancel")
+async def cb_account_rename_cancel(cb: CallbackQuery) -> None:
+    _RENAME_CUSTOM_PENDING.pop(cb.from_user.id, None)
+    await cb.answer("لغو شد")
+
+
+@router.callback_query(F.data == "acct:rn:rnd")
+async def cb_account_rename_random(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    candidate = _gen_username_random(cb.from_user.id)
+    # ensure uniqueness vs DB
+    async with session_scope() as session:
+        exists = await session.scalar(select(User.id).where(User.marzban_username == candidate))
+        if exists:
+            candidate = _gen_username_random(cb.from_user.id)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="تایید ✅", callback_data=f"acct:rn:fin:{candidate}")],
+        [InlineKeyboardButton(text="انصراف ❌", callback_data="acct:rn:cancel")],
+    ])
+    await cb.message.answer(f"آیا از تغییر یوزرنیم به «{candidate}» اطمینان دارید؟", reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "acct:rn:cst")
+async def cb_account_rename_custom(cb: CallbackQuery) -> None:
+    _RENAME_CUSTOM_PENDING[cb.from_user.id] = True
+    await cb.message.answer("یوزرنیم جدید را ارسال کنید (فقط حروف کوچک و ارقام�� حداقل ۶ کاراکتر).")
+    await cb.answer()
+
+
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _RENAME_CUSTOM_PENDING and isinstance(getattr(m, "text", None), str))
+async def msg_account_rename_custom(message: Message) -> None:
+    user_id = message.from_user.id
+    txt = (message.text or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9]{6,}", txt):
+        await message.answer("فرمت نامعتبر است. فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر.")
+        return
+    async with session_scope() as session:
+        exists = await session.scalar(select(User.id).where(User.marzban_username == txt))
+        if exists:
+            await message.answer("این یوزرنیم قبلاً استفاده شده است. مورد دیگری ارسال کنید.")
+            return
+        u = await session.scalar(select(User).where(User.telegram_id == user_id))
+        old = u.marzban_username if u else tg_username(user_id)
+    if txt == old:
+        await message.answer("یوزرنیم جدید با قبلی یکسان است.")
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="تایید ✅", callback_data=f"acct:rn:fin:{txt}")],
+        [InlineKeyboardButton(text="انصراف ���", callback_data="acct:rn:cancel")],
+    ])
+    await message.answer(f"آیا از تغییر یوزرنیم به «{txt}» اطمینان دارید؟", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("acct:rn:fin:"))
+async def cb_account_rename_finish(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    try:
+        new_un = cb.data.split(":")[3]
+    except Exception:
+        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        return
+    allowed, msg = await _can_rename_now(cb.from_user.id)
+    if not allowed:
+        await cb.message.answer(msg or "فعلاً امکان تغییر یوزرنیم ندارید.")
+        await cb.answer()
+        return
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
+        if not u:
+            await cb.answer("ابتدا /start را بزنید.", show_alert=True)
+            return
+        old = u.marzban_username or tg_username(cb.from_user.id)
+        if new_un == old:
+            await cb.answer("بدون تغییر", show_alert=True)
+            return
+        u.marzban_username = new_un
+        # Save last rename time
+        row = await session.scalar(select(Setting).where(Setting.key == f"USER:{cb.from_user.id}:LAST_RENAME_AT"))
+        now_iso = datetime.utcnow().isoformat()
+        if not row:
+            session.add(Setting(key=f"USER:{cb.from_user.id}:LAST_RENAME_AT", value=now_iso))
+        else:
+            row.value = now_iso
+        await session.commit()
+    try:
+        await ops_replace_username(old, new_un, note="user rename")
+    except Exception:
+        await cb.message.answer("خطا در تغییر یوزرنیم در پنل.")
+        await cb.answer()
+        return
+    _RENAME_CUSTOM_PENDING.pop(cb.from_user.id, None)
+    await cb.message.answer("✅ یوزرنیم با موفقیت تغییر کرد.")
+    # Refresh view
+    try:
+        text, token, links = await _render_account_text(cb.from_user.id)
+        await cb.message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
+    except Exception:
+        pass
+    await cb.answer("Renamed")
