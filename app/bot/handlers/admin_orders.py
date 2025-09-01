@@ -277,7 +277,15 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
                 await cb.message.bot.send_message(chat_id=user.telegram_id, text=disp_url)
     except Exception:
         pass
-    await cb.message.edit_text(cb.message.text + "\n\nApproved ✅")
+    try:
+        if getattr(cb.message, "caption", None):
+            cap = cb.message.caption or "درخواست"
+            await cb.message.edit_caption(cap + "\n\nApproved ✅")
+        else:
+            txt = (cb.message.text or "درخواست") + "\n\nApproved ✅"
+            await cb.message.edit_text(txt)
+    except Exception:
+        pass
     await cb.answer("Approved")
 
 
@@ -304,5 +312,13 @@ async def cb_reject_order(cb: CallbackQuery) -> None:
             return
         await log_audit(session, actor="admin", action="order_rejected", target_type="order", target_id=order_id, meta=str({"by": cb.from_user.id}))
         await session.commit()
-    await cb.message.edit_text(cb.message.text + "\n\nRejected ❌")
+    try:
+        if getattr(cb.message, "caption", None):
+            cap = cb.message.caption or "درخواست"
+            await cb.message.edit_caption(cap + "\n\nRejected ❌")
+        else:
+            txt = (cb.message.text or "درخواست") + "\n\nRejected ❌"
+            await cb.message.edit_text(txt)
+    except Exception:
+        pass
     await cb.answer("Rejected")
