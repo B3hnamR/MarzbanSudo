@@ -18,7 +18,7 @@ from app.services import marzban_ops as ops
 
 router = Router()
 
-PAGE_SIZE = 10
+PAGE_SIZE = 5
 
 # intents: admin_id -> (op, user_id)
 _USER_INTENTS: Dict[int, Tuple[str, int]] = {}
@@ -33,7 +33,6 @@ def _admin_only() -> str:
 def _kb_users_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📋 همه کاربران", callback_data="users:list:all:1")],
-        [InlineKeyboardButton(text="🛍️ خریداران", callback_data="users:list:buyers:1")],
         [InlineKeyboardButton(text="🔍 جستجو", callback_data="users:search")],
         [InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="users:menu")],
     ])
@@ -139,13 +138,12 @@ async def cb_users_list(cb: CallbackQuery) -> None:
         return
     lines: List[str] = []
     for u, oc, phone in rows:
-        # Only show Telegram ID per request
-        lines.append(f"- tg:{u.telegram_id}")
+        lines.append(f"- 🆔 tg:{u.telegram_id} | 👤 {u.marzban_username or '-'}")
     prefix = "users:list:buyers" if buyers_only else "users:list:all"
     nav = _kb_users_pagination(prefix, page_i, pages)
     kb_rows: List[List[InlineKeyboardButton]] = []
     for u, _, _ in rows:
-        kb_rows.append([InlineKeyboardButton(text=f"مدیریت {u.marzban_username}", callback_data=f"users:view:{u.id}")])
+        kb_rows.append([InlineKeyboardButton(text=f"مدیریت tg:{u.telegram_id} | {u.marzban_username or '-'}", callback_data=f"users:view:{u.id}")])
     if nav:
         kb_rows.append(nav)
     kb_rows.append([InlineKeyboardButton(text="⬅️ بازگشت", callback_data="users:menu")])
@@ -523,8 +521,8 @@ async def admin_users_search(message: Message) -> None:
     kb_rows: List[List[InlineKeyboardButton]] = []
     lines: List[str] = []
     for u in results:
-        lines.append(f"- {u.marzban_username} | tg:{u.telegram_id}")
-        kb_rows.append([InlineKeyboardButton(text=f"مدیریت {u.marzban_username}", callback_data=f"users:view:{u.id}")])
+        lines.append(f"- 🆔 tg:{u.telegram_id} | 👤 {u.marzban_username or '-'}")
+        kb_rows.append([InlineKeyboardButton(text=f"مدیریت tg:{u.telegram_id} | {u.marzban_username or '-'}", callback_data=f"users:view:{u.id}")])
     kb_rows.append([InlineKeyboardButton(text="⬅️ بازگشت", callback_data="users:menu")])
     await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
 
