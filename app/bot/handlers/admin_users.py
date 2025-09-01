@@ -674,6 +674,21 @@ async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
         pass
     return True, ""
 
+async def _apply_username_change_and_provision(uid: int, tpl_id: int, new_username: str) -> Tuple[bool, str]:
+    # Update DB username first, then replace on server to avoid duplicates
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.id == uid))
+        if not u:
+            return False, "user not found"
+        old = u.marzban_username
+        u.marzban_username = new_username
+        await session.commit()
+    try:
+        await ops.replace_user_username(old, new_username, note=f"grant tpl:{tpl_id}")
+    except Exception:
+        return False, "rename error"
+    return await _provision_and_record(uid, tpl_id)
+
 
 @router.callback_query(F.data.startswith("users:grantuse:"))
 async def cb_users_grant_use(cb: CallbackQuery) -> None:
@@ -706,23 +721,23 @@ async def cb_users_grant_random(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("bad args", show_alert=True)
         return
-    # Generate and set random username including tg_id
+    # Generate random candidate including tg_id and ensure uniqueness in DB
     async with session_scope() as session:
         u = await session.scalar(select(User).where(User.id == uid))
         if not u:
             await cb.answer("user not found", show_alert=True)
             return
+        candidate = None
         for _ in range(10):
-            candidate = _gen_username_random(u.telegram_id)
-            exists = await session.scalar(select(User.id).where(User.marzban_username == candidate))
+            cand = _gen_username_random(u.telegram_id)
+            exists = await session.scalar(select(User.id).where(User.marzban_username == cand))
             if not exists:
-                u.marzban_username = candidate
-                await session.commit()
+                candidate = cand
                 break
-        else:
+        if not candidate:
             await cb.answer("failed to generate username", show_alert=True)
             return
-    ok, err = await _provision_and_record(uid, tpl_id)
+    ok, err = await _apply_username_change_and_provision(uid, tpl_id, candidate)
     if not ok:
         await cb.answer(err, show_alert=True)
         return
@@ -767,9 +782,7 @@ async def admin_users_grant_custom_username(message: Message) -> None:
         if not u:
             await message.answer("کاربر یافت نشد.")
             return
-        u.marzban_username = text
-        await session.commit()
-    ok, err = await _provision_and_record(uid, tpl_id)
+    ok, err = await _apply_username_change_and_provision(uid, tpl_id, text)
     if not ok:
         await message.answer(f"خطا: {err}")
         return

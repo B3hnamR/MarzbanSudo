@@ -111,7 +111,15 @@ class MarzbanClient:
         return resp.json()
 
     async def get_user(self, username: str) -> Dict[str, Any]:
-        resp = await self._request("GET", f"/api/user/{username}")
+        # Treat 404 as an allowed status to avoid noisy error logging in _request,
+        # then re-raise a HTTPStatusError here so callers can handle it gracefully.
+        resp = await self._request("GET", f"/api/user/{username}", allowed_statuses={404})
+        if resp.status_code == 404:
+            raise httpx.HTTPStatusError(
+                message=f"Client error '404 Not Found' for url '{resp.request.url}'",
+                request=resp.request,
+                response=resp,
+            )
         return resp.json()
 
     async def create_user(self, username: str, template_id: int, data_limit: int, expire: int, note: str = "") -> Dict[str, Any]:

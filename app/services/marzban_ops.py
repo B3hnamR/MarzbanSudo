@@ -99,8 +99,7 @@ async def revoke_sub(username: str) -> Dict[str, Any]:
 async def get_user(username: str) -> Dict[str, Any]:
     client = await get_client()
     try:
-        resp = await client._request("GET", f"/api/user/{username}")
-        return resp.json()
+        return await client.get_user(username)
     finally:
         await client.aclose()
 
@@ -153,6 +152,26 @@ async def add_data_gb(username: str, delta_gb: float) -> Dict[str, Any]:
         return await get_user(username)
     finally:
         await client.aclose()
+
+
+async def replace_user_username(old_username: str, new_username: str, note: str = "") -> Dict[str, Any]:
+    """Replace a user's username in Marzban to avoid duplicates.
+    Strategy:
+      - If names are equal → ensure user exists via create_user_minimal
+      - If different → try to delete old (ignore 404), then create minimal new
+    Returns the resulting user snapshot for new_username.
+    """
+    if not new_username:
+        raise ValueError("new_username is required")
+    if old_username == new_username:
+        return await create_user_minimal(new_username, note=note)
+    # Delete old user best-effort
+    try:
+        await delete_user(old_username)
+    except Exception:
+        pass
+    # Create new minimal
+    return await create_user_minimal(new_username, note=note or f"rename from {old_username}")
 
 
 async def provision_for_plan(username: str, plan: Plan) -> Dict[str, Any]:

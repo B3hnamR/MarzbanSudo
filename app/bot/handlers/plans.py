@@ -3,9 +3,12 @@ from __future__ import annotations
 import logging
 import os
 import html
+import re
+import random
+import string
 from decimal import Decimal
 from datetime import datetime
-from typing import List
+from typing import List, Tuple, Dict
 from app.marzban.client import get_client
 
 from aiogram import Router, F
@@ -16,6 +19,7 @@ from app.db.models import Setting
 
 from app.db.session import session_scope
 from app.db.models import Plan, User, Order
+from app.services import marzban_ops as ops
 from app.scripts.sync_plans import sync_templates_to_plans
 from app.utils.username import tg_username
 
@@ -23,6 +27,9 @@ from app.utils.username import tg_username
 router = Router()
 
 PAGE_SIZE = 5
+# Purchase username selection state
+_PURCHASE_SELECTION: Dict[int, Tuple[int, str]] = {}
+_PURCHASE_CUSTOM_PENDING: Dict[int, int] = {}
 
 
 def _plan_text(p: Plan) -> str:
@@ -104,6 +111,27 @@ async def cb_plan_page(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
+def _gen_username_random(tg_id: int) -> str:
+    suffix = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(3))
+    return f"tg{tg_id}{suffix}"
+
+
+async def _present_final_confirm(cb: CallbackQuery, tpl_id: int, username_eff: str, plan: Plan) -> None:
+    price_irr = Decimal(str(plan.price or 0))
+    tmn = int(price_irr/Decimal('10')) if price_irr > 0 else 0
+    gb_label = (f"{(plan.data_limit_bytes or 0) / (1024 ** 3):.0f}GB" if (plan.data_limit_bytes or 0) > 0 else "نامحدود")
+    dur_label = (f"{plan.duration_days} روز" if (plan.duration_days or 0) > 0 else "بدون محدودیت")
+    text = (
+        "آیا از خرید پلن زیر اطمینان دارید؟\n\n"
+        f"🧩 {plan.title}\n"
+        f"⏳ مدت: {dur_label} | 📦 حجم: {gb_label}\n"
+        f"👤 یوزرنیم سرویس: {username_eff}\n"
+        f"💵 مبلغ: {tmn:,} تومان"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تایید ✅", callback_data=f"plan:final:{tpl_id}"), InlineKeyboardButton(text="انصراف ❌", callback_data="plan:cancel")]])
+    await cb.message.answer(text, reply_markup=kb)
+
+
 @router.callback_query(F.data.startswith("plan:buy:"))
 async def cb_plan_buy(cb: CallbackQuery) -> None:
     try:
@@ -155,10 +183,9 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
                     return
     except Exception:
         pass
-    # Show confirmation (with full details + effective username)
+    # Username selection step for end-user
     async with session_scope() as session:
         plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
-        # Resolve effective username from DB if exists
         username_eff = tg_username(cb.from_user.id)
         urow = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
         if urow and getattr(urow, "marzban_username", None):
@@ -166,21 +193,106 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
     if not plan:
         await cb.answer("پلن یافت نشد", show_alert=True)
         return
-    price_irr = Decimal(str(plan.price or 0))
-    tmn = int(price_irr/Decimal('10')) if price_irr > 0 else 0
-    # Derive labels
-    gb_label = (f"{(plan.data_limit_bytes or 0) / (1024 ** 3):.0f}GB" if (plan.data_limit_bytes or 0) > 0 else "نامحدود")
-    dur_label = (f"{plan.duration_days} روز" if (plan.duration_days or 0) > 0 else "بدون محدودیت")
-    text = (
-        "آیا از خرید پلن زیر اطمینان دارید؟\n\n"
-        f"🧩 {plan.title}\n"
-        f"⏳ مدت: {dur_label} | 📦 حجم: {gb_label}\n"
-        f"👤 یوزرنیم سرویس: {username_eff}\n"
-        f"💵 مبلغ: {tmn:,} تومان"
-    )
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تایید ✅", callback_data=f"plan:confirm:{tpl_id}"), InlineKeyboardButton(text="انصراف ❌", callback_data="plan:cancel")]])
-    await cb.message.answer(text, reply_markup=kb)
+    _PURCHASE_SELECTION.pop(cb.from_user.id, None)
+    _PURCHASE_CUSTOM_PENDING.pop(cb.from_user.id, None)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"استفاده از یوزرنیم فعلی: {username_eff}", callback_data=f"plan:uname:use:{tpl_id}")],
+        [InlineKeyboardButton(text="ساخت یوزرنیم رندوم", callback_data=f"plan:uname:rnd:{tpl_id}")],
+        [InlineKeyboardButton(text="یوزرنیم دلخواه ✏️", callback_data=f"plan:uname:cst:{tpl_id}")],
+    ])
+    await cb.message.answer("لطفاً روش انتخاب یوزرنیم را انتخاب کنید:", reply_markup=kb)
     await cb.answer()
+
+
+@router.callback_query(F.data.startswith("plan:uname:use:"))
+async def cb_plan_uname_use(cb: CallbackQuery) -> None:
+    try:
+        tpl_id = int(cb.data.split(":")[3])
+    except Exception:
+        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        return
+    async with session_scope() as session:
+        plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
+        username_eff = tg_username(cb.from_user.id)
+        urow = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
+        if urow and getattr(urow, "marzban_username", None):
+            username_eff = urow.marzban_username
+    if not plan:
+        await cb.answer("پلن یافت نشد", show_alert=True)
+        return
+    _PURCHASE_SELECTION[cb.from_user.id] = (tpl_id, username_eff)
+    await _present_final_confirm(cb, tpl_id, username_eff, plan)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("plan:uname:rnd:"))
+async def cb_plan_uname_rnd(cb: CallbackQuery) -> None:
+    try:
+        tpl_id = int(cb.data.split(":")[3])
+    except Exception:
+        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        return
+    # generate candidate unique vs DB users
+    async with session_scope() as session:
+        urow = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
+        if not urow:
+            await cb.answer("ابتدا /start را بزنید.", show_alert=True)
+            return
+        candidate = None
+        for _ in range(10):
+            cand = _gen_username_random(cb.from_user.id)
+            exists = await session.scalar(select(User.id).where(User.marzban_username == cand))
+            if not exists:
+                candidate = cand
+                break
+        if not candidate:
+            await cb.answer("عدم امکان ساخت نام کاربری رندوم", show_alert=True)
+            return
+        plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
+    if not plan:
+        await cb.answer("پلن یافت نشد", show_alert=True)
+        return
+    _PURCHASE_SELECTION[cb.from_user.id] = (tpl_id, candidate)
+    await _present_final_confirm(cb, tpl_id, candidate, plan)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("plan:uname:cst:"))
+async def cb_plan_uname_cst(cb: CallbackQuery) -> None:
+    try:
+        tpl_id = int(cb.data.split(":")[3])
+    except Exception:
+        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        return
+    _PURCHASE_CUSTOM_PENDING[cb.from_user.id] = tpl_id
+    await cb.message.answer("یوزرنیم دلخواه را ارسال کنید (فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر).")
+    await cb.answer()
+
+
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _PURCHASE_CUSTOM_PENDING and isinstance(getattr(m, "text", None), str))
+async def msg_plan_uname_custom(message: Message) -> None:
+    user_id = message.from_user.id
+    tpl_id = _PURCHASE_CUSTOM_PENDING.pop(user_id)
+    uname = (message.text or "").strip()
+    if not re.fullmatch(r"[a-z0-9]{6,}", uname):
+        await message.answer("فرمت نامعتبر است. فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر.")
+        _PURCHASE_CUSTOM_PENDING[user_id] = tpl_id
+        return
+    async with session_scope() as session:
+        exists = await session.scalar(select(User.id).where(User.marzban_username == uname))
+        if exists:
+            await message.answer("این یوزرنیم قبلاً استفاده شده است. مورد دیگری ارسال کنید.")
+            _PURCHASE_CUSTOM_PENDING[user_id] = tpl_id
+            return
+        plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
+    if not plan:
+        await message.answer("پلن یافت نشد.")
+        return
+    _PURCHASE_SELECTION[user_id] = (tpl_id, uname)
+    # Use a fake cb wrapper for uniform rendering
+    class _Cb:
+        def __init__(self, m): self.message = m
+    await _present_final_confirm(_Cb(message), tpl_id, uname, plan)
 
 
 @router.callback_query(F.data.startswith("plan:confirm:"))
@@ -217,6 +329,38 @@ async def cb_plan_confirm(cb: CallbackQuery) -> None:
                     return
     except Exception:
         pass
+    # Ensure username selection applied (rename if changed) then proceed
+    sel = _PURCHASE_SELECTION.get(cb.from_user.id)
+    if sel and sel[0] == tpl_id:
+        chosen_username = sel[1]
+        # Persist in DB and replace on Marzban if needed
+        async with session_scope() as session:
+            db_user = (await session.execute(select(User).where(User.telegram_id == cb.from_user.id))).scalars().first()
+            if not db_user:
+                # Auto-create DB user record
+                from app.utils.username import tg_username as _tg
+                db_user = User(
+                    telegram_id=cb.from_user.id,
+                    marzban_username=chosen_username or _tg(cb.from_user.id),
+                    subscription_token=None,
+                    status="active",
+                    data_limit_bytes=0,
+                    balance=0,
+                )
+                session.add(db_user)
+                await session.flush()
+            old = db_user.marzban_username or tg_username(cb.from_user.id)
+            if chosen_username and chosen_username != old:
+                db_user.marzban_username = chosen_username
+                await session.commit()
+                try:
+                    await ops.replace_user_username(old, chosen_username, note=f"purchase tpl:{tpl_id}")
+                except Exception:
+                    await cb.message.answer("خطا در به‌روز رسانی نام کاربری در پنل.")
+                    await cb.answer()
+                    return
+        # Clear selection after applying
+        _PURCHASE_SELECTION.pop(cb.from_user.id, None)
     # Proceed with purchase
     await _do_purchase(cb, tpl_id)
 
