@@ -96,33 +96,6 @@ async def handle_account(message: Message) -> None:
     try:
         text, token, links = await _render_account_text(message.from_user.id)
         await message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
-        # Send configs as code blocks for one-tap copy
-        if links:
-            encoded = [html.escape(s.strip()) for s in links if s and s.strip()]
-            blocks = [f"<pre>{s}</pre>" for s in encoded]
-            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📋 کپی همه", callback_data="acct:copyall")]])
-            body = "🧩 کانفیگ‌های متنی:\n\n" + "\n\n".join(blocks)
-            if len(body) <= 3500:
-                await message.answer(body, reply_markup=kb, parse_mode="HTML")
-            else:
-                chunk: List[str] = []
-                size = 0
-                prefix = "🧩 کانفیگ‌های متنی:\n\n"
-                first = True
-                for b in blocks:
-                    entry = ("" if first else "\n\n") + b
-                    addition = (prefix + entry) if first else entry
-                    if size + len(addition) > 3500:
-                        await message.answer(prefix + "\n\n".join(chunk), parse_mode="HTML")
-                        chunk = [b]
-                        size = len(prefix) + len(b)
-                        first = False
-                        continue
-                    chunk.append(b)
-                    size += len(addition)
-                    first = False
-                if chunk:
-                    await message.answer(prefix + "\n\n".join(chunk), reply_markup=kb, parse_mode="HTML")
     except httpx.HTTPStatusError as e:
         status = e.response.status_code if e.response is not None else None
         if status == 404:
@@ -277,6 +250,29 @@ async def cb_account_copy_all(cb: CallbackQuery) -> None:
     if not parts:
         await cb.answer("محتوایی برای کپی وجود ندارد.", show_alert=True)
         return
-    text = "\n\n".join(parts)
-    await cb.message.answer(text)
+    # Send as header + code blocks for easy copying
+    encoded = [html.escape(p) for p in parts]
+    blocks = [f"<pre>{e}</pre>" for e in encoded]
+    header = "🧩 کانفیگ‌های متنی:\n\n"
+    body = header + "\n\n".join(blocks)
+    if len(body) <= 3500:
+        await cb.message.answer(body, parse_mode="HTML")
+    else:
+        chunk: List[str] = []
+        size = 0
+        first = True
+        for b in blocks:
+            entry = ("" if first else "\n\n") + b
+            addition = (header + entry) if first else entry
+            if size + len(addition) > 3500:
+                await cb.message.answer((header if first else "") + "\n\n".join(chunk), parse_mode="HTML")
+                chunk = [b]
+                size = len(header) + len(b)
+                first = False
+                continue
+            chunk.append(b)
+            size += len(addition)
+            first = False
+        if chunk:
+            await cb.message.answer((header if first else "") + "\n\n".join(chunk), parse_mode="HTML")
     await cb.answer("Ready to copy")
