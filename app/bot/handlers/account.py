@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import html
 from datetime import datetime
 from typing import List, Tuple
 
@@ -64,11 +65,11 @@ async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
     used_traffic = int(data.get("used_traffic") or 0)
     remaining = max(data_limit - used_traffic, 0)
     links: List[str] = list(map(str, data.get("links") or []))
-    rlm = "\u200F"
+    lrm = "\u200E"
     # Emoji-rich header
     lines = [
         f"👤 نام کاربری: {username}",
-        f"🆔 شناسه تلگرام: {rlm}{tg_id}",
+        f"🆔 شناسه تلگرام: {lrm}{tg_id}",
         f"🗓️ تاریخ ثبت‌نام: {reg_date_txt}",
         f"🧾 تعداد خریدها: {orders_count}",
         f"📦 حجم کل: {_fmt_gb2(data_limit)}",
@@ -83,23 +84,7 @@ async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
         lines.append(f"🔗 لینک اشتراک: https://{sub_domain}/sub4me/{token}/")
         lines.append(f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray")
         lines.append(f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json")
-    # Inline text configs section (separated by blank lines, truncated to avoid Telegram limits)
-    if links:
-        lines.append("")
-        lines.append("🧩 کانفیگ‌های متنی:")
-        max_len = 3500
-        cur_len = 0
-        for s in links:
-            s = s.strip()
-            if not s:
-                continue
-            add = ("\n" if (lines and lines[-1] != "") else "") + s + "\n"
-            if cur_len + len(add) > max_len:
-                lines.append("… (برای مشاهده همه، دکمه \"📋 کپی همه\" را بزنید)")
-                break
-            lines.append(s)
-            lines.append("")
-            cur_len += len(add)
+    # Inline text configs removed from summary; they will be sent as code blocks in a separate message for one-tap copy.
     return "\n".join(lines), token, links
 
 
@@ -111,6 +96,33 @@ async def handle_account(message: Message) -> None:
     try:
         text, token, links = await _render_account_text(message.from_user.id)
         await message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
+        # Send configs as code blocks for one-tap copy
+        if links:
+            encoded = [html.escape(s.strip()) for s in links if s and s.strip()]
+            blocks = [f"<pre>{s}</pre>" for s in encoded]
+            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📋 کپی همه", callback_data="acct:copyall")]])
+            body = "🧩 کانفیگ‌های متنی:\n\n" + "\n\n".join(blocks)
+            if len(body) <= 3500:
+                await message.answer(body, reply_markup=kb, parse_mode="HTML")
+            else:
+                chunk: List[str] = []
+                size = 0
+                prefix = "🧩 کانفیگ‌های متنی:\n\n"
+                first = True
+                for b in blocks:
+                    entry = ("" if first else "\n\n") + b
+                    addition = (prefix + entry) if first else entry
+                    if size + len(addition) > 3500:
+                        await message.answer(prefix + "\n\n".join(chunk), parse_mode="HTML")
+                        chunk = [b]
+                        size = len(prefix) + len(b)
+                        first = False
+                        continue
+                    chunk.append(b)
+                    size += len(addition)
+                    first = False
+                if chunk:
+                    await message.answer(prefix + "\n\n".join(chunk), reply_markup=kb, parse_mode="HTML")
     except httpx.HTTPStatusError as e:
         status = e.response.status_code if e.response is not None else None
         if status == 404:
@@ -165,27 +177,26 @@ async def cb_account_links(cb: CallbackQuery) -> None:
         await cb.message.answer("هیچ کانفیگ مستقیمی از پنل دریافت نشد.")
         await cb.answer()
         return
-    body = "\n\n".join([s.strip() for s in links if s and s.strip()])
+    encoded = [html.escape(s.strip()) for s in links if s and s.strip()]
+    blocks = [f"<pre>{s}</pre>" for s in encoded]
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📋 کپی همه", callback_data="acct:copyall")]])
+    body = "\n\n".join(blocks)
     if len(body) <= 3500 and len(body) > 0:
-        await cb.message.answer(body, reply_markup=kb)
+        await cb.message.answer(body, reply_markup=kb, parse_mode="HTML")
     else:
         chunk: List[str] = []
         size = 0
-        for s in links:
-            s = s.strip()
-            if not s:
-                continue
-            entry = ("\n\n" if chunk else "") + s
+        for b in blocks:
+            entry = ("\n\n" if chunk else "") + b
             if size + len(entry) > 3500:
-                await cb.message.answer("\n\n".join(chunk))
-                chunk = [s]
-                size = len(s)
+                await cb.message.answer("\n\n".join(chunk), parse_mode="HTML")
+                chunk = [b]
+                size = len(b)
                 continue
-            chunk.append(s)
+            chunk.append(b)
             size += len(entry)
         if chunk:
-            await cb.message.answer("\n\n".join(chunk), reply_markup=kb)
+            await cb.message.answer("\n\n".join(chunk), reply_markup=kb, parse_mode="HTML")
     await cb.answer("Sent")
 
 
