@@ -87,7 +87,7 @@ async def handle_start(message: Message) -> None:
                     join_url = f"https://t.me/{channel.lstrip('@')}"
                     kb = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="📢 عضویت در کانال", url=join_url)],
-                        [InlineKeyboardButton(text="من عضو شدم ���", callback_data="chk:chan")],
+                        [InlineKeyboardButton(text="من عضو شدم ✅", callback_data="chk:chan")],
                     ])
                     txt = (
                         "برای استفاده از ربات، ابتدا در کانال عضو شوید.\n"

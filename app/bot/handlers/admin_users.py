@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple, Optional
 from decimal import Decimal
 from datetime import datetime
+import re
 
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -29,7 +30,8 @@ def _admin_only() -> str:
 
 def _kb_users_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 همه کاربران", callback_data="users:list:all:1"), InlineKeyboardButton(text="🛍️ خ��یداران", callback_data="users:list:buyers:1")],
+        [InlineKeyboardButton(text="📋 همه کاربران", callback_data="users:list:all:1")],
+        [InlineKeyboardButton(text="🛍️ خریداران", callback_data="users:list:buyers:1")],
         [InlineKeyboardButton(text="🔍 جستجو", callback_data="users:search")],
         [InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="users:menu")],
     ])
@@ -48,7 +50,7 @@ async def _menu_summary_text() -> str:
         "👥 مدیریت کاربران",
         f"👥 کل کاربران: {int(total_users):,}",
         f"🛍️ کاربران دارای خرید: {int(buyers):,}",
-        f"📦 ��جموع سفارش‌ها: {int(total_orders):,}",
+        f"📦 مجموع سفارش‌ها: {int(total_orders):,}",
         f"✅ وضعیت active: {int(active_users):,}",
         f"🚫 وضعیت disabled: {int(disabled_users):,}",
         f"💳⏳ درخواست‌های شارژ در انتظار: {int(pending_topups):,}",
@@ -249,6 +251,7 @@ async def cb_user_wallet_add_prompt(cb: CallbackQuery) -> None:
         await cb.answer("bad id", show_alert=True)
         return
     # cancel any other intent
+    _SEARCH_INTENT.pop(cb.from_user.id, None)
     _USER_INTENTS[cb.from_user.id] = ("wallet_add_tmn", uid)
     await cb.message.answer("مبلغ را به تومان ارسال کنید (عدد صحیح).")
     await cb.answer()
@@ -264,6 +267,7 @@ async def cb_user_addgb_prompt(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("bad id", show_alert=True)
         return
+    _SEARCH_INTENT.pop(cb.from_user.id, None)
     _USER_INTENTS[cb.from_user.id] = ("add_gb", uid)
     await cb.message.answer("مقدار حجم را به گیگابایت ارسال کنید (مثلاً 5 یا 1.5).")
     await cb.answer()
@@ -279,6 +283,7 @@ async def cb_user_extend_prompt(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("bad id", show_alert=True)
         return
+    _SEARCH_INTENT.pop(cb.from_user.id, None)
     _USER_INTENTS[cb.from_user.id] = ("extend_days", uid)
     await cb.message.answer("تعداد روزهای تمدید را ارسال کنید (عدد صحیح).")
     await cb.answer()
@@ -312,7 +317,7 @@ async def admin_users_numeric_inputs(message: Message) -> None:
             _USER_INTENTS.pop(admin_id, None)
             # notify user
             try:
-                await message.bot.send_message(chat_id=u.telegram_id, text=f"✅ شارژ دستی ت��سط ادمین: +{toman:,} تومان\nموجودی جدید: {int(Decimal(u.balance or 0)/Decimal('10')):,} تومان")
+                await message.bot.send_message(chat_id=u.telegram_id, text=f"✅ شارژ دستی توسط ادمین: +{toman:,} تومان\nموجودی جدید: {int(Decimal(u.balance or 0)/Decimal('10')):,} تومان")
             except Exception:
                 pass
             # refresh detail
@@ -469,25 +474,29 @@ async def admin_users_search(message: Message) -> None:
         _SEARCH_INTENT.pop(admin_id, None)
         await message.answer(_admin_only())
         return
-    query = message.text.strip()
+    raw = message.text or ""
+    query = raw.strip()
+    # Remove RTL markers and normalize
+    query_marks_clean = re.sub(r"[\u200e\u200f\u202a-\u202e]", "", query)
     async with session_scope() as session:
         results: List[User] = []
         # Search by username (LIKE)
-        results = (await session.execute(select(User).where(User.marzban_username.like(f"%{query}%")).order_by(desc(User.created_at)).limit(20))).scalars().all()
-        # If digits and no results: try telegram id or phone tail match
-        if not results and query.replace("+", "").replace(" ", "").lstrip("0").isdigit():
+        results = (await session.execute(select(User).where(User.marzban_username.like(f"%{query_marks_clean}%")).order_by(desc(User.created_at)).limit(20))).scalars().all()
+        # If digits-like: try tg_id or phone tail match
+        digits_clean = re.sub(r"[\u200e\u200f\u202a-\u202e\s\-\+]", "", query_marks_clean)
+        if not results and digits_clean.isdigit():
             # Try tg_id
-            u = await session.scalar(select(User).where(User.telegram_id == int(query.replace(" ", "")) ))
+            u = await session.scalar(select(User).where(User.telegram_id == int(digits_clean)))
             if u:
                 results = [u]
             else:
                 # phone search in settings
                 rows = (await session.execute(select(Setting).where(Setting.key.like("USER:%:PHONE")).limit(2000))).scalars().all()
                 matched: List[int] = []
-                qn = query.replace(" ", "")
+                qn = digits_clean
                 for r in rows:
                     try:
-                        if str(r.value).strip().endswith(qn):
+                        if str(r.value).strip().replace(" ", "").replace("-", "").endswith(qn):
                             tg_id = int(str(r.key).split(":")[1])
                             matched.append(tg_id)
                     except Exception:
