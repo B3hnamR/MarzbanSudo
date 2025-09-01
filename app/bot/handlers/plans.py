@@ -365,6 +365,72 @@ async def cb_plan_confirm(cb: CallbackQuery) -> None:
     await _do_purchase(cb, tpl_id)
 
 
+@router.callback_query(F.data.startswith("plan:final:"))
+async def cb_plan_final(cb: CallbackQuery) -> None:
+    try:
+        tpl_id = int(cb.data.split(":")[2])
+    except Exception:
+        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        return
+    # Re-run gates quickly (in case state changed)
+    channel = os.getenv("REQUIRED_CHANNEL", "").strip()
+    admin_ids_env = os.getenv("TELEGRAM_ADMIN_IDS", "")
+    is_admin_user = False
+    try:
+        is_admin_user = cb.from_user and (cb.from_user.id in {int(x.strip()) for x in admin_ids_env.split(',') if x.strip().isdigit()})
+    except Exception:
+        is_admin_user = False
+    if channel and not is_admin_user:
+        try:
+            member = await cb.message.bot.get_chat_member(chat_id=channel, user_id=cb.from_user.id)
+            if getattr(member, "status", None) not in {"member", "creator", "administrator"}:
+                await cb.answer("ابتدا در کانال عضو شوید.", show_alert=True)
+                return
+        except Exception:
+            pass
+    try:
+        from sqlalchemy import select as sa_select
+        async with session_scope() as session:
+            row = await session.scalar(sa_select(Setting).where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
+            if row and str(row.value).strip() in {"1", "true", "True"} and not is_admin_user:
+                row_v = await session.scalar(sa_select(Setting).where(Setting.key == f"USER:{cb.from_user.id}:PHONE_VERIFIED_AT"))
+                if not (row_v and str(row_v.value).strip()):
+                    await cb.answer("ابتدا شماره خود را تایید کنید.", show_alert=True)
+                    return
+    except Exception:
+        pass
+    # Ensure username selection applied (rename if changed) then proceed
+    sel = _PURCHASE_SELECTION.get(cb.from_user.id)
+    if sel and sel[0] == tpl_id:
+        chosen_username = sel[1]
+        # Persist in DB and replace on Marzban if needed
+        async with session_scope() as session:
+            db_user = (await session.execute(select(User).where(User.telegram_id == cb.from_user.id))).scalars().first()
+            if not db_user:
+                from app.utils.username import tg_username as _tg
+                db_user = User(
+                    telegram_id=cb.from_user.id,
+                    marzban_username=chosen_username or _tg(cb.from_user.id),
+                    subscription_token=None,
+                    status="active",
+                    data_limit_bytes=0,
+                    balance=0,
+                )
+                session.add(db_user)
+                await session.flush()
+            old = db_user.marzban_username or tg_username(cb.from_user.id)
+            if chosen_username and chosen_username != old:
+                db_user.marzban_username = chosen_username
+                await session.commit()
+                try:
+                    await ops.replace_user_username(old, chosen_username, note=f"purchase tpl:{tpl_id}")
+                except Exception:
+                    await cb.message.answer("خطا در به‌روز رسانی نام کاربری در پنل.")
+                    await cb.answer()
+                    return
+        _PURCHASE_SELECTION.pop(cb.from_user.id, None)
+    await _do_purchase(cb, tpl_id)
+
 @router.callback_query(F.data == "plan:cancel")
 async def cb_plan_cancel(cb: CallbackQuery) -> None:
     await cb.answer("انصراف شد")
