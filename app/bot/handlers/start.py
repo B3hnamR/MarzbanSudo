@@ -5,9 +5,10 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from app.db.session import session_scope
-from app.db.models import Setting
+from app.db.models import Setting, User
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE, is_admin_uid
 from sqlalchemy import select
+from app.utils.username import tg_username
 
 # Import existing handlers to reuse their logic without showing slash commands
 from app.bot.handlers.plans import handle_plans as plans_handler
@@ -40,13 +41,35 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="💳 کیف پول")],
             [KeyboardButton(text="💳 درخواست‌های شارژ"), KeyboardButton(text="💼 تنظیمات کیف پول")],
             [KeyboardButton(text="⚙️ مدیریت پلن‌ها"), KeyboardButton(text="📦 سفارش‌های اخیر")],
-            [KeyboardButton(text="📱 تنظیمات احراز شماره"), KeyboardButton(text="➕ شارژ دستی")],
+            [KeyboardButton(text="👥 مدیریت کاربران"), KeyboardButton(text="📱 تنظیمات احراز شماره")],
+            [KeyboardButton(text="➕ شارژ دستی")],
         ], resize_keyboard=True
     )
 
 
 @router.message(CommandStart())
 async def handle_start(message: Message) -> None:
+    # Ensure a DB user record exists for anyone who starts the bot
+    try:
+        if message.from_user:
+            tg_id = message.from_user.id
+            async with session_scope() as session:
+                existing = await session.scalar(select(User).where(User.telegram_id == tg_id))
+                if not existing:
+                    username = tg_username(tg_id)
+                    u = User(
+                        telegram_id=tg_id,
+                        marzban_username=username,
+                        subscription_token=None,
+                        status="active",
+                        data_limit_bytes=0,
+                        balance=0,
+                    )
+                    session.add(u)
+                    await session.flush()
+    except Exception:
+        pass
+
     if _is_admin(message):
         text = (
             "به MarzbanSudo خوش آمدید، ادمین عزیز!\n\n"
@@ -64,7 +87,7 @@ async def handle_start(message: Message) -> None:
                     join_url = f"https://t.me/{channel.lstrip('@')}"
                     kb = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="📢 عضویت در کانال", url=join_url)],
-                        [InlineKeyboardButton(text="من عضو شدم ✅", callback_data="chk:chan")],
+                        [InlineKeyboardButton(text="من عضو شدم ���", callback_data="chk:chan")],
                     ])
                     txt = (
                         "برای استفاده از ربات، ابتدا در کانال عضو شوید.\n"
