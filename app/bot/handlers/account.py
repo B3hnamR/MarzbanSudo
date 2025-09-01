@@ -432,6 +432,72 @@ async def cb_account_qr_svc(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
+@router.callback_query(F.data.startswith("acct:copyall:svc:"))
+async def cb_account_copy_all_svc(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    try:
+        sid = int(cb.data.split(":")[3])
+    except Exception:
+        await cb.answer("bad id", show_alert=True)
+        return
+    async with session_scope() as session:
+        s = await session.scalar(select(UserService).where(UserService.id == sid))
+    if not s:
+        await cb.answer("not found", show_alert=True)
+        return
+    client = await get_client()
+    try:
+        data = await client.get_user(s.username)
+        if str(data.get("status") or "").lower() == "disabled":
+            await cb.answer("غیرفعال است", show_alert=True)
+            return
+        token = data.get("subscription_token") or (data.get("subscription_url", "").split("/")[-1] if data.get("subscription_url") else None)
+        links = list(map(str, data.get("links") or []))
+        sub_url = data.get("subscription_url") or ""
+    finally:
+        await client.aclose()
+    sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
+    url = f"https://{sub_domain}/sub4me/{token}/" if (token and sub_domain) else sub_url
+    parts: List[str] = []
+    if url:
+        parts.append(url)
+        parts.append(f"{url}v2ray")
+        parts.append(f"{url}v2ray-json")
+    for s2 in links:
+        ss = s2.strip()
+        if ss:
+            parts.append(ss)
+    if not parts:
+        await cb.answer("محتوایی برای کپی وجود ندارد.", show_alert=True)
+        return
+    encoded = [html.escape(p) for p in parts]
+    blocks = [f"<pre>{e}</pre>" for e in encoded]
+    header = "🧩 کانفیگ‌های متنی:\n\n"
+    body = header + "\n\n".join(blocks)
+    if len(body) <= 3500:
+        await cb.message.answer(body, parse_mode="HTML")
+    else:
+        chunk: List[str] = []
+        size = 0
+        first = True
+        for b in blocks:
+            entry = ("" if first else "\n\n") + b
+            addition = (header + entry) if first else entry
+            if size + len(addition) > 3500:
+                await cb.message.answer((header if first else "") + "\n\n".join(chunk), parse_mode="HTML")
+                chunk = [b]
+                size = len(header) + len(b)
+                first = False
+                continue
+            chunk.append(b)
+            size += len(addition)
+            first = False
+        if chunk:
+            await cb.message.answer((header if first else "") + "\n\n".join(chunk), parse_mode="HTML")
+    await cb.answer("Ready to copy")
+
 @router.callback_query(F.data == "acct:copyall")
 async def cb_account_copy_all(cb: CallbackQuery) -> None:
     if not cb.from_user:
@@ -569,7 +635,7 @@ async def cb_account_rename_random(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "acct:rn:cst")
 async def cb_account_rename_custom(cb: CallbackQuery) -> None:
     _RENAME_CUSTOM_PENDING[cb.from_user.id] = True
-    await cb.message.answer("یوزرنیم جدید را ارسال کنید (فقط حروف کوچک و ارقام�� حداقل ۶ کاراکتر).")
+    await cb.message.answer("یوزرنیم جدید را ارسال کنید (فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر).")
     await cb.answer()
 
 
@@ -592,7 +658,7 @@ async def msg_account_rename_custom(message: Message) -> None:
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="تایید ✅", callback_data=f"acct:rn:fin:{txt}")],
-        [InlineKeyboardButton(text="انصراف ���", callback_data="acct:rn:cancel")],
+        [InlineKeyboardButton(text="انصراف ❌", callback_data="acct:rn:cancel")],
     ])
     await message.answer(f"آیا از تغییر یوزرنیم به «{txt}» اطمینان دارید؟", reply_markup=kb)
 
