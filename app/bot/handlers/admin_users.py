@@ -12,7 +12,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from sqlalchemy import select, func, desc, distinct
 
 from app.db.session import session_scope
-from app.db.models import User, Order, Setting, Plan, WalletTopUp
+from app.db.models import User, Order, Setting, Plan, WalletTopUp, UserService
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE
 from app.services import marzban_ops as ops
 
@@ -24,6 +24,8 @@ PAGE_SIZE = 5
 _USER_INTENTS: Dict[int, Tuple[str, int]] = {}
 # search: admin_id -> True when awaiting search query
 _SEARCH_INTENT: Dict[int, bool] = {}
+# service intents: admin_id -> (op, user_id, service_id)
+_SVC_INTENTS: Dict[int, Tuple[str, int, int]] = {}
 
 
 def _admin_only() -> str:
@@ -171,7 +173,7 @@ async def _render_user_detail(u: User) -> Tuple[str, InlineKeyboardMarkup]:
     btns: List[List[InlineKeyboardButton]] = []
     btns.append([InlineKeyboardButton(text=("🚫 Ban" if u.status != "disabled" else "✅ Unban"), callback_data=f"users:ban:{u.id}")])
     btns.append([InlineKeyboardButton(text="➕ شارژ دستی (TMN)", callback_data=f"users:wadd:{u.id}")])
-    btns.append([InlineKeyboardButton(text="➕ افزایش حجم (GB)", callback_data=f"users:addgb:{u.id}"), InlineKeyboardButton(text="➕ افزایش روز", callback_data=f"users:extend:{u.id}")])
+    # Per-service operations are available under service management view
     btns.append([InlineKeyboardButton(text="🛒 فعال‌سازی پلن", callback_data=f"users:grant:{u.id}:1")])
     btns.append([InlineKeyboardButton(text="♻️ Reset", callback_data=f"users:reset:{u.id}"), InlineKeyboardButton(text="🔗 Revoke", callback_data=f"users:revoke:{u.id}")])
     btns.append([InlineKeyboardButton(text="🗑️ حذف (Marzban)", callback_data=f"users:delete:{u.id}")])
@@ -190,16 +192,29 @@ async def cb_user_view(cb: CallbackQuery) -> None:
         await cb.answer("bad id", show_alert=True)
         return
     _USER_INTENTS.pop(cb.from_user.id, None)
+    _SVC_INTENTS.pop(cb.from_user.id, None)
     async with session_scope() as session:
         u = await session.scalar(select(User).where(User.id == uid))
+        svcs = (await session.execute(select(UserService).where(UserService.user_id == uid).order_by(UserService.created_at.desc()))).scalars().all() if u else []
     if not u:
         await cb.answer("not found", show_alert=True)
         return
-    text, kb = await _render_user_detail(u)
+    # Render header + services
+    header, _ = await _render_user_detail(u)
+    lines = [header, "", "🧩 سرویس‌ها:"]
+    kb_rows: List[List[InlineKeyboardButton]] = []
+    if svcs:
+        for s in svcs:
+            lines.append(f"- {s.username} | وضعیت: {s.status}")
+            kb_rows.append([InlineKeyboardButton(text=f"مدیریت سرویس {s.username}", callback_data=f"users:svc:{uid}:{s.id}")])
+    else:
+        lines.append("— سرویسی ثبت نشده است.")
+    kb_rows.append([InlineKeyboardButton(text="🛒 فعال‌سازی پلن", callback_data=f"users:grant:{uid}:1")])
+    kb_rows.append([InlineKeyboardButton(text="⬅️ بازگشت", callback_data="users:menu")])
     try:
-        await cb.message.edit_text(text, reply_markup=kb)
+        await cb.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
     except Exception:
-        await cb.message.answer(text, reply_markup=kb)
+        await cb.message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
     await cb.answer()
 
 
@@ -288,10 +303,11 @@ async def cb_user_extend_prompt(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _USER_INTENTS and isinstance(getattr(m, "text", None), str) and not _SEARCH_INTENT.get(m.from_user.id, False))
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in _USER_INTENTS or m.from_user.id in _SVC_INTENTS) and isinstance(getattr(m, "text", None), str) and not _SEARCH_INTENT.get(m.from_user.id, False))
 async def admin_users_numeric_inputs(message: Message) -> None:
     admin_id = message.from_user.id
     op, uid = _USER_INTENTS.get(admin_id, ("", 0))
+    svc_intent = _SVC_INTENTS.get(admin_id)
     if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
         _USER_INTENTS.pop(admin_id, None)
         await message.answer(_admin_only())
@@ -302,6 +318,46 @@ async def admin_users_numeric_inputs(message: Message) -> None:
             _USER_INTENTS.pop(admin_id, None)
             await message.answer("کاربر یافت نشد.")
             return
+        if svc_intent:
+            # Service-specific numeric intents
+            sop, suid, sid = svc_intent
+            s = await session.scalar(select(UserService).where(UserService.id == sid, UserService.user_id == suid))
+            if not s:
+                _SVC_INTENTS.pop(admin_id, None)
+                await message.answer("سرویس یافت نشد.")
+                return
+            if sop == "add_gb_svc":
+                try:
+                    gb = float(message.text.strip())
+                    if gb <= 0:
+                        raise ValueError
+                except Exception:
+                    await message.answer("مقدار نامعتبر است. یک عدد مثبت (مثلاً 1.5) ارسال کنید.")
+                    return
+                try:
+                    await ops.add_data_gb(s.username, gb)
+                except Exception:
+                    await message.answer("خطا در اعمال حجم.")
+                    return
+                _SVC_INTENTS.pop(admin_id, None)
+                await message.answer(f"📈 به سرویس {s.username} {gb}GB اضافه شد.")
+                return
+            if sop == "extend_days_svc":
+                try:
+                    days = int(message.text.strip())
+                    if days <= 0:
+                        raise ValueError
+                except Exception:
+                    await message.answer("تعداد روز نامعتبر است. یک عدد صحیح مثبت ارسال کنید.")
+                    return
+                try:
+                    await ops.extend_expire(s.username, days)
+                except Exception:
+                    await message.answer("خطا در تمدید.")
+                    return
+                _SVC_INTENTS.pop(admin_id, None)
+                await message.answer(f"⏳ سرویس {s.username} به مدت {days} روز تمدید شد.")
+                return
         if op == "wallet_add_tmn":
             try:
                 toman = int(message.text.strip())
@@ -372,8 +428,157 @@ async def admin_users_numeric_inputs(message: Message) -> None:
     _USER_INTENTS.pop(admin_id, None)
 
 
-@router.callback_query(F.data.startswith("users:reset:"))
-async def cb_user_reset(cb: CallbackQuery) -> None:
+@router.callback_query(F.data.startswith("users:svc:"))
+async def cb_users_service_view(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        _, _, uid_str, sid_str = cb.data.split(":")
+        uid = int(uid_str)
+        sid = int(sid_str)
+    except Exception:
+        await cb.answer("bad args", show_alert=True)
+        return
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.id == uid))
+        s = await session.scalar(select(UserService).where(UserService.id == sid, UserService.user_id == uid))
+    if not (u and s):
+        await cb.answer("not found", show_alert=True)
+        return
+    text = (
+        f"👤 سرویس: {s.username}\n"
+        f"🆔 tg:{u.telegram_id}\n"
+        f"🔖 وضعیت: {s.status}"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📈 افزایش حجم (GB)", callback_data=f"users:addgbsvc:{uid}:{sid}"), InlineKeyboardButton(text="⏳ افزایش روز", callback_data=f"users:extendsvc:{uid}:{sid}")],
+        [InlineKeyboardButton(text="♻️ Reset", callback_data=f"users:svcrst:{uid}:{sid}"), InlineKeyboardButton(text="🔗 Revoke", callback_data=f"users:svcrvk:{uid}:{sid}")],
+        [InlineKeyboardButton(text="🗑️ حذف سرویس", callback_data=f"users:svcdel:{uid}:{sid}")],
+        [InlineKeyboardButton(text="⬅️ بازگشت", callback_data=f"users:view:{uid}")],
+    ])
+    try:
+        await cb.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        await cb.message.answer(text, reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("users:addgbsvc:"))
+async def cb_users_addgb_service(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        _, _, uid_str, sid_str = cb.data.split(":")
+        uid = int(uid_str)
+        sid = int(sid_str)
+    except Exception:
+        await cb.answer("bad args", show_alert=True)
+        return
+    _SVC_INTENTS[cb.from_user.id] = ("add_gb_svc", uid, sid)
+    await cb.message.answer("مقدار حجم را به گیگابایت ارسال کنید (مثلاً 5 یا 1.5).")
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("users:extendsvc:"))
+async def cb_users_extend_service(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        _, _, uid_str, sid_str = cb.data.split(":")
+        uid = int(uid_str)
+        sid = int(sid_str)
+    except Exception:
+        await cb.answer("bad args", show_alert=True)
+        return
+    _SVC_INTENTS[cb.from_user.id] = ("extend_days_svc", uid, sid)
+    await cb.message.answer("تعداد روزهای تمدید را ارسال کنید (عدد صحیح).")
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("users:svcrst:"))
+async def cb_users_reset_service(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        _, _, uid_str, sid_str = cb.data.split(":")
+        uid = int(uid_str)
+        sid = int(sid_str)
+    except Exception:
+        await cb.answer("bad args", show_alert=True)
+        return
+    async with session_scope() as session:
+        s = await session.scalar(select(UserService).where(UserService.id == sid, UserService.user_id == uid))
+    if not s:
+        await cb.answer("not found", show_alert=True)
+        return
+    try:
+        await ops.reset_user(s.username)
+    except Exception:
+        await cb.answer("ops error", show_alert=True)
+        return
+    await cb.answer("reset")
+
+
+@router.callback_query(F.data.startswith("users:svcrvk:"))
+async def cb_users_revoke_service(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        _, _, uid_str, sid_str = cb.data.split(":")
+        uid = int(uid_str)
+        sid = int(sid_str)
+    except Exception:
+        await cb.answer("bad args", show_alert=True)
+        return
+    async with session_scope() as session:
+        s = await session.scalar(select(UserService).where(UserService.id == sid, UserService.user_id == uid))
+    if not s:
+        await cb.answer("not found", show_alert=True)
+        return
+    try:
+        await ops.revoke_sub(s.username)
+    except Exception:
+        await cb.answer("ops error", show_alert=True)
+        return
+    await cb.answer("revoked")
+
+
+@router.callback_query(F.data.startswith("users:svcdel:"))
+async def cb_users_delete_service(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        _, _, uid_str, sid_str = cb.data.split(":")
+        uid = int(uid_str)
+        sid = int(sid_str)
+    except Exception:
+        await cb.answer("bad args", show_alert=True)
+        return
+    async with session_scope() as session:
+        s = await session.scalar(select(UserService).where(UserService.id == sid, UserService.user_id == uid))
+        if not s:
+            await cb.answer("not found", show_alert=True)
+            return
+        username = s.username
+    try:
+        await ops.delete_user(username)
+    except Exception:
+        await cb.answer("ops error", show_alert=True)
+        return
+    # Remove from DB
+    async with session_scope() as session:
+        s2 = await session.scalar(select(UserService).where(UserService.id == sid, UserService.user_id == uid))
+        if s2:
+            from sqlalchemy import delete as sa_delete
+            await session.execute(sa_delete(UserService).where(UserService.id == sid))
+            await session.commit()
+    await cb.answer("deleted")
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
         await cb.answer("No access", show_alert=True)
         return
