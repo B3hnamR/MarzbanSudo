@@ -499,3 +499,38 @@ Outcome: Simpler, robust purchase path with immediate provisioning on sufficient
   - Media caption/text edit fallbacks to avoid Telegram “no caption” errors when updating admin cards.
 
 Outcome: Streamlined wallet-based purchase with clear confirmations, richer account/orders UIs, robust admin moderation (including reasoned rejections), and convenient admin wallet crediting via both slash commands and guided UI.
+
+---
+
+## 2025-09-01 – Fixes & Ops: stability, env alignment, and maintainability
+
+- Fix (admin orders): Safely update admin moderation messages for media posts
+  - Edit: app/bot/handlers/admin_orders.py
+  - Detect caption vs text and use edit_caption/edit_text appropriately on Approve/Reject.
+  - Prevents Telegram BadRequest/TypeError when updating messages with media.
+
+- Ops (ENV alignment): Add DB_PASSWORD/DB_ROOT_PASSWORD and guidance
+  - Edit: .env.example
+  - Added DB_PASSWORD and DB_ROOT_PASSWORD; documented that DB_URL must contain the literal password matching DB_PASSWORD (no ${DB_PASSWORD} in URL).
+  - Prevents DB connection mismatch during Compose deployment.
+
+- Migrations (cleanup): Deprecate stray Alembic path
+  - Edit: app/alembic/versions/20250829_01_wallet.py
+  - Replaced with a DEPRECATED notice pointing to app/db/migrations/versions/20250829_000002_wallet.py as the effective migration.
+
+- Scheduler (usage notifications): Decouple from stored subscription token
+  - Edit: app/services/scheduler.py (job_notify_usage)
+  - Fetch usage by username; users without stored tokens still receive threshold alerts.
+
+- Security/ACL: Centralize admin ID handling
+  - Edit: app/services/security.py – added get_admin_ids(); continued use of is_admin_uid().
+  - Edit: app/bot/handlers/start.py – switched to is_admin_uid; fixed channel gate indentation.
+  - Edit: app/bot/handlers/wallet.py – use get_admin_ids() for admin notifications; removed local ENV parsing helpers.
+
+- Compose: Add worker healthcheck
+  - Edit: docker-compose.yml – lightweight healthcheck for worker by importing scheduler module.
+
+- Models (typing): Use Decimal for monetary fields (no schema change)
+  - Edit: app/db/models.py – balance, price, amount, plan_price now typed as Decimal to align with Numeric(12,2) and avoid precision issues.
+
+Outcome: Improved runtime stability (admin moderation of media), reduced operational misconfigurations (DB password alignment), clearer migrations path, consistent admin handling, basic worker health monitoring, and better financial precision without DB schema changes.
