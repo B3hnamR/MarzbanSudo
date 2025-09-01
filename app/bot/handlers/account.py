@@ -13,7 +13,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from sqlalchemy import select, func
 
 from app.db.session import session_scope
-from app.db.models import User, Order, Setting
+from app.db.models import User, Order, Setting, UserService
 from app.marzban.client import get_client
 from app.services.marzban_ops import revoke_sub as marz_revoke_sub
 from app.services.marzban_ops import replace_user_username as ops_replace_username
@@ -109,20 +109,36 @@ async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
 async def handle_account(message: Message) -> None:
     if not message.from_user:
         return
-    await message.answer("در حال دریافت اطلاعات اکانت...")
-    try:
-        text, token, links = await _render_account_text(message.from_user.id)
-        await message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
-    except httpx.HTTPStatusError as e:
-        status = e.response.status_code if e.response is not None else None
-        if status == 404:
-            await message.answer(
-                "اکانت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید."
-            )
-        else:
-            await message.answer("خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")
-    except Exception:
-        await message.answer("اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
+    # Multi-service: list services first
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.telegram_id == message.from_user.id))
+        svcs = []
+        if u:
+            svcs = (await session.execute(select(UserService).where(UserService.user_id == u.id).order_by(UserService.created_at.desc()))).scalars().all()
+    if not svcs:
+        # Fallback to single summary when no services exist yet
+        await message.answer("در حال دریافت اطلاعات اکانت...")
+        try:
+            text, token, links = await _render_account_text(message.from_user.id)
+            await message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code if e.response is not None else None
+            if status == 404:
+                await message.answer(
+                    "اکانت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید."
+                )
+            else:
+                await message.answer("خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")
+        except Exception:
+            await message.answer("اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
+        return
+    # Render service list and management buttons
+    lines = ["👤 سرویس‌های شما:"]
+    kb_rows: List[List[InlineKeyboardButton]] = []
+    for s in svcs:
+        lines.append(f"- {s.username} | وضعیت: {s.status}")
+        kb_rows.append([InlineKeyboardButton(text=f"مدیریت {s.username}", callback_data=f"acct:svc:{s.id}")])
+    await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
 
 
 @router.callback_query(F.data == "acct:refresh")
@@ -149,6 +165,71 @@ async def cb_account_refresh(cb: CallbackQuery) -> None:
     except Exception:
         await cb.message.answer("اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
         await cb.answer()
+
+
+@router.callback_query(F.data.startswith("acct:svc:"))
+async def cb_account_service_view(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    try:
+        sid = int(cb.data.split(":")[2])
+    except Exception:
+        await cb.answer("bad id", show_alert=True)
+        return
+    async with session_scope() as session:
+        s = await session.scalar(select(UserService).where(UserService.id == sid))
+    if not s:
+        await cb.answer("not found", show_alert=True)
+        return
+    # Render details for this service username
+    try:
+        client = await get_client()
+        data = await client.get_user(s.username)
+    except httpx.HTTPStatusError as e:
+        if e.response is not None and e.response.status_code == 404:
+            await cb.message.answer("اکانت این سرویس در پنل یافت نشد.")
+        else:
+            await cb.message.answer("خطا در دریافت اطلاعات سرویس.")
+        await cb.answer()
+        return
+    finally:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+    status = str(data.get("status") or "")
+    is_disabled = status.lower() == "disabled"
+    token = None if is_disabled else (data.get("subscription_token") or (data.get("subscription_url", "").split("/")[-1] if data.get("subscription_url") else None))
+    expire_ts = 0 if is_disabled else int(data.get("expire") or 0)
+    data_limit = 0 if is_disabled else int(data.get("data_limit") or 0)
+    used_traffic = 0 if is_disabled else int(data.get("used_traffic") or 0)
+    remaining = max(data_limit - used_traffic, 0)
+    lrm = "\u200E"
+    lines = [
+        f"👤 نام کاربری: {s.username}",
+        f"🆔 شناسه تلگرام: {lrm}{cb.from_user.id}",
+        f"📦 حجم کل: {_fmt_gb2(data_limit)}",
+        f"📉 مصرف‌شده: {_fmt_gb2(used_traffic)}",
+        f"📈 باقی‌مانده: {_fmt_gb2(remaining)}",
+    ]
+    if expire_ts > 0 and not is_disabled:
+        lines.append(f"⏳ انقضا: {datetime.utcfromtimestamp(expire_ts).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
+    if is_disabled:
+        lines.append("")
+        lines.append("🚫 این سرویس در حال حاضر غیرفعال است.")
+    elif token and sub_domain:
+        lines.append("")
+        lines.append(f"🔗 لینک اشتراک: https://{sub_domain}/sub4me/{token}/")
+        lines.append(f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray")
+        lines.append(f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📄 کانفیگ‌ها (متنی)", callback_data=f"acct:links:svc:{s.id}"), InlineKeyboardButton(text="📋 کپی همه", callback_data=f"acct:copyall:svc:{s.id}")],
+        [InlineKeyboardButton(text="🔳 QR اشتراک", callback_data=f"acct:qr:svc:{s.id}")],
+    ])
+    await cb.message.answer("\n".join(lines), reply_markup=kb)
+    await cb.answer()
 
 
 @router.callback_query(F.data == "acct:links")
@@ -223,6 +304,58 @@ async def cb_account_revoke(cb: CallbackQuery) -> None:
     await cb.answer("Link rotated")
 
 
+@router.callback_query(F.data.startswith("acct:links:svc:"))
+async def cb_account_links_svc(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    try:
+        sid = int(cb.data.split(":")[3])
+    except Exception:
+        await cb.answer("bad id", show_alert=True)
+        return
+    async with session_scope() as session:
+        s = await session.scalar(select(UserService).where(UserService.id == sid))
+    if not s:
+        await cb.answer("not found", show_alert=True)
+        return
+    client = await get_client()
+    try:
+        data = await client.get_user(s.username)
+        if str(data.get("status") or "").lower() == "disabled":
+            await cb.message.answer("🚫 سرویس غیرفعال است.")
+            await cb.answer()
+            return
+        links = list(map(str, data.get("links") or []))
+    finally:
+        await client.aclose()
+    if not links:
+        await cb.message.answer("هیچ کانفیگ مستقیمی از پنل دریافت نشد.")
+        await cb.answer()
+        return
+    encoded = [html.escape(ss.strip()) for ss in links if ss and ss.strip()]
+    blocks = [f"<pre>{s}</pre>" for s in encoded]
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📋 کپی همه", callback_data=f"acct:copyall:svc:{sid}")]])
+    body = "\n\n".join(blocks)
+    if len(body) <= 3500 and len(body) > 0:
+        await cb.message.answer(body, reply_markup=kb, parse_mode="HTML")
+    else:
+        chunk: List[str] = []
+        size = 0
+        for b in blocks:
+            entry = ("\n\n" if chunk else "") + b
+            if size + len(entry) > 3500:
+                await cb.message.answer("\n\n".join(chunk), parse_mode="HTML")
+                chunk = [b]
+                size = len(b)
+                continue
+            chunk.append(b)
+            size += len(entry)
+        if chunk:
+            await cb.message.answer("\n\n".join(chunk), reply_markup=kb, parse_mode="HTML")
+    await cb.answer("Sent")
+
+
 @router.callback_query(F.data == "acct:qr")
 async def cb_account_qr(cb: CallbackQuery) -> None:
     if not cb.from_user:
@@ -254,6 +387,46 @@ async def cb_account_qr(cb: CallbackQuery) -> None:
     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={url}"
     try:
         await cb.message.answer_photo(qr_url, caption="QR اشتراک شما")
+    except Exception:
+        await cb.message.answer(url)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("acct:qr:svc:"))
+async def cb_account_qr_svc(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    try:
+        sid = int(cb.data.split(":")[3])
+    except Exception:
+        await cb.answer("bad id", show_alert=True)
+        return
+    async with session_scope() as session:
+        s = await session.scalar(select(UserService).where(UserService.id == sid))
+    if not s:
+        await cb.answer("not found", show_alert=True)
+        return
+    client = await get_client()
+    try:
+        data = await client.get_user(s.username)
+        if str(data.get("status") or "").lower() == "disabled":
+            await cb.answer("غیرفعال است", show_alert=True)
+            return
+        token = data.get("subscription_token") or (data.get("subscription_url", "").split("/")[-1] if data.get("subscription_url") else None)
+    finally:
+        await client.aclose()
+    if not token:
+        await cb.answer("لینک اشتراک یافت نشد.", show_alert=True)
+        return
+    sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
+    url = f"https://{sub_domain}/sub4me/{token}/" if sub_domain else (data.get("subscription_url") or "")
+    if not url:
+        await cb.answer("URL اشتراک نامعتبر است.", show_alert=True)
+        return
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={url}"
+    try:
+        await cb.message.answer_photo(qr_url, caption="QR اشتراک سرویس")
     except Exception:
         await cb.message.answer(url)
     await cb.answer()
