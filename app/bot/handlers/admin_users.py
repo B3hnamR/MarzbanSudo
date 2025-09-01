@@ -139,9 +139,8 @@ async def cb_users_list(cb: CallbackQuery) -> None:
         return
     lines: List[str] = []
     for u, oc, phone in rows:
-        tmn = int(Decimal(u.balance or 0) / Decimal("10"))
-        mark = "✅" if oc > 0 else "—"
-        lines.append(f"- {u.marzban_username} | tg:{u.telegram_id} | خرید: {oc} {mark} | موجودی: {tmn:,} تومان" + (f" | 📞 {phone}" if phone else ""))
+        # Only show Telegram ID per request
+        lines.append(f"- tg:{u.telegram_id}")
     prefix = "users:list:buyers" if buyers_only else "users:list:all"
     nav = _kb_users_pagination(prefix, page_i, pages)
     kb_rows: List[List[InlineKeyboardButton]] = []
@@ -480,31 +479,43 @@ async def admin_users_search(message: Message) -> None:
     query = raw.strip()
     # Remove RTL markers and normalize
     query_marks_clean = re.sub(r"[\u200e\u200f\u202a-\u202e]", "", query)
+    normalized = query_marks_clean.strip().lower().lstrip("@")
     async with session_scope() as session:
         results: List[User] = []
-        # Search by username (LIKE)
-        results = (await session.execute(select(User).where(User.marzban_username.like(f"%{query_marks_clean}%")).order_by(desc(User.created_at)).limit(20))).scalars().all()
-        # If digits-like: try tg_id or phone tail match
-        digits_clean = re.sub(r"[\u200e\u200f\u202a-\u202e\s\-\+]", "", query_marks_clean)
+        # Search by Marzban username (LIKE)
+        results = (await session.execute(select(User).where(User.marzban_username.like(f"%{normalized}%")).order_by(desc(User.created_at)).limit(20))).scalars().all()
+        # If digits-like: try telegram id
+        digits_clean = re.sub(r"[\u200e\u200f\u202a-\u202e\s\-\+]", "", normalized)
         if not results and digits_clean.isdigit():
-            # Try tg_id
             u = await session.scalar(select(User).where(User.telegram_id == int(digits_clean)))
             if u:
                 results = [u]
-            else:
-                # phone search in settings
-                rows = (await session.execute(select(Setting).where(Setting.key.like("USER:%:PHONE")).limit(2000))).scalars().all()
-                matched: List[int] = []
-                qn = digits_clean
-                for r in rows:
-                    try:
-                        if str(r.value).strip().replace(" ", "").replace("-", "").endswith(qn):
-                            tg_id = int(str(r.key).split(":")[1])
-                            matched.append(tg_id)
-                    except Exception:
-                        pass
-                if matched:
-                    results = (await session.execute(select(User).where(User.telegram_id.in_(matched)))).scalars().all()
+        # If not found, try Telegram username from settings
+        if not results:
+            rows = (await session.execute(select(Setting).where(Setting.key.like("USER:%:TG_USERNAME")).limit(5000))).scalars().all()
+            matched: List[int] = []
+            for r in rows:
+                try:
+                    if str(r.value).strip().lower() == normalized:
+                        tg_id = int(str(r.key).split(":")[1])
+                        matched.append(tg_id)
+                except Exception:
+                    pass
+            if matched:
+                results = (await session.execute(select(User).where(User.telegram_id.in_(matched)))).scalars().all()
+        # Phone tail search as last resort
+        if not results and digits_clean.isdigit():
+            rows = (await session.execute(select(Setting).where(Setting.key.like("USER:%:PHONE")).limit(2000))).scalars().all()
+            matched: List[int] = []
+            for r in rows:
+                try:
+                    if str(r.value).strip().replace(" ", "").replace("-", "").endswith(digits_clean):
+                        tg_id = int(str(r.key).split(":")[1])
+                        matched.append(tg_id)
+                except Exception:
+                    pass
+            if matched:
+                results = (await session.execute(select(User).where(User.telegram_id.in_(matched)))).scalars().all()
     _SEARCH_INTENT.pop(admin_id, None)
     if not results:
         await message.answer("نتیجه‌ای یافت نشد.")

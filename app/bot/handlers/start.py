@@ -67,6 +67,19 @@ async def handle_start(message: Message) -> None:
                     )
                     session.add(u)
                     await session.flush()
+                # Upsert Telegram username to settings for search (lowercased)
+                try:
+                    tg_un = getattr(message.from_user, "username", None)
+                    if tg_un:
+                        tg_un_l = tg_un.strip().lower()
+                        row = await session.scalar(select(Setting).where(Setting.key == f"USER:{tg_id}:TG_USERNAME"))
+                        if not row:
+                            session.add(Setting(key=f"USER:{tg_id}:TG_USERNAME", value=tg_un_l))
+                        else:
+                            row.value = tg_un_l
+                        await session.flush()
+                except Exception:
+                    pass
     except Exception:
         pass
 
