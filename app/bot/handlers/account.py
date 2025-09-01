@@ -71,7 +71,7 @@ async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
     lrm = "\u200E"
     # Emoji-rich header
     lines = [
-        f"👤 نام کاربری: {username}",
+        f"👤 نام کاربری: {username_eff}",
         f"🆔 شناسه تلگرام: {lrm}{tg_id}",
         f"🗓️ تاریخ ثبت‌نام: {reg_date_txt}",
         f"🧾 تعداد خریدها: {orders_count}",
