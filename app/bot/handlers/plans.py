@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import html
 from decimal import Decimal
 from datetime import datetime
 from typing import List
@@ -318,24 +319,32 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
         token2 = token or (sub_url.rstrip("/").split("/")[-1] if sub_url else None)
         # Manage/Copy buttons
         manage_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 مدیریت اکانت", callback_data="acct:refresh"), InlineKeyboardButton(text="📋 کپی همه", callback_data="acct:copyall")]])
-        # Send text configs (chunked, with blank lines)
+        # Send textual configs as headered code blocks (HTML), chunked safely
         if links:
-            chunk: List[str] = []
-            size = 0
-            for ln in links:
-                s = str(ln).strip()
-                if not s:
-                    continue
-                entry = ("\n\n" if chunk else "") + s
-                if size + len(entry) > 3500:
-                    await cb.message.answer("\n\n".join(chunk))
-                    chunk = [s]
-                    size = len(s)
-                    continue
-                chunk.append(s)
-                size += len(entry)
-            if chunk:
-                await cb.message.answer("\n\n".join(chunk), reply_markup=manage_kb)
+            encoded = [html.escape(str(ln).strip()) for ln in links if str(ln).strip()]
+            blocks = [f"<pre>{e}</pre>" for e in encoded]
+            header = "🧩 کانفیگ‌های متنی:\n\n"
+            body = header + "\n\n".join(blocks)
+            if len(body) <= 3500:
+                await cb.message.answer(body, reply_markup=manage_kb, parse_mode="HTML")
+            else:
+                chunk: List[str] = []
+                size = 0
+                first = True
+                for b in blocks:
+                    entry = ("" if first else "\n\n") + b
+                    addition = (header + entry) if first else entry
+                    if size + len(addition) > 3500:
+                        await cb.message.answer((header if first else "") + "\n\n".join(chunk), parse_mode="HTML")
+                        chunk = [b]
+                        size = len(header) + len(b)
+                        first = False
+                        continue
+                    chunk.append(b)
+                    size += len(addition)
+                    first = False
+                if chunk:
+                    await cb.message.answer((header if first else "") + "\n\n".join(chunk), reply_markup=manage_kb, parse_mode="HTML")
         else:
             # If no direct configs, still show manage button for user to fetch
             await cb.message.answer("برای مدیریت و دریافت کانفیگ‌ها از دکمه زیر استفاده کنید.", reply_markup=manage_kb)
