@@ -43,20 +43,23 @@ def _acct_kb(has_token: bool, has_links: bool) -> InlineKeyboardMarkup:
 
 
 async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
-    username = tg_username(tg_id)
+    username_default = tg_username(tg_id)
     # Load DB info
     reg_date_txt = "—"
     orders_count = 0
+    username_eff = username_default
     async with session_scope() as session:
         user = await session.scalar(select(User).where(User.telegram_id == tg_id))
         if user:
             reg_date_txt = user.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC"
             res = await session.execute(select(func.count(Order.id)).where(Order.user_id == user.id))
             orders_count = int(res.scalar() or 0)
+            if getattr(user, "marzban_username", None):
+                username_eff = user.marzban_username
     # Load Marzban info
     client = await get_client()
     try:
-        data = await client.get_user(username)
+        data = await client.get_user(username_eff)
     finally:
         await client.aclose()
     token = data.get("subscription_token") or (data.get("subscription_url", "").split("/")[-1] if data.get("subscription_url") else None)
@@ -139,7 +142,12 @@ async def cb_account_links(cb: CallbackQuery) -> None:
     if not cb.from_user:
         await cb.answer()
         return
+    # Resolve username from DB if exists
     username = tg_username(cb.from_user.id)
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
+        if u and getattr(u, "marzban_username", None):
+            username = u.marzban_username
     client = await get_client()
     try:
         data = await client.get_user(username)
@@ -179,6 +187,10 @@ async def cb_account_revoke(cb: CallbackQuery) -> None:
         await cb.answer()
         return
     username = tg_username(cb.from_user.id)
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
+        if u and getattr(u, "marzban_username", None):
+            username = u.marzban_username
     try:
         await marz_revoke_sub(username)
     except Exception:
@@ -199,6 +211,10 @@ async def cb_account_qr(cb: CallbackQuery) -> None:
         await cb.answer()
         return
     username = tg_username(cb.from_user.id)
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
+        if u and getattr(u, "marzban_username", None):
+            username = u.marzban_username
     client = await get_client()
     try:
         data = await client.get_user(username)
@@ -228,6 +244,10 @@ async def cb_account_copy_all(cb: CallbackQuery) -> None:
         await cb.answer()
         return
     username = tg_username(cb.from_user.id)
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
+        if u and getattr(u, "marzban_username", None):
+            username = u.marzban_username
     client = await get_client()
     try:
         data = await client.get_user(username)

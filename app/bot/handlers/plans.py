@@ -155,15 +155,29 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
                     return
     except Exception:
         pass
-    # Show confirmation
+    # Show confirmation (with full details + effective username)
     async with session_scope() as session:
         plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
+        # Resolve effective username from DB if exists
+        username_eff = tg_username(cb.from_user.id)
+        urow = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
+        if urow and getattr(urow, "marzban_username", None):
+            username_eff = urow.marzban_username
     if not plan:
         await cb.answer("پلن یافت نشد", show_alert=True)
         return
     price_irr = Decimal(str(plan.price or 0))
     tmn = int(price_irr/Decimal('10')) if price_irr > 0 else 0
-    text = f"آیا از خرید پلن زیر اطمینان دارید؟\n\n🧩 {plan.title}\n💵 مبلغ: {tmn:,} تومان"
+    # Derive labels
+    gb_label = (f"{(plan.data_limit_bytes or 0) / (1024 ** 3):.0f}GB" if (plan.data_limit_bytes or 0) > 0 else "نامحدود")
+    dur_label = (f"{plan.duration_days} روز" if (plan.duration_days or 0) > 0 else "بدون محدودیت")
+    text = (
+        "آیا از خرید پلن زیر اطمینان دارید؟\n\n"
+        f"🧩 {plan.title}\n"
+        f"⏳ مدت: {dur_label} | 📦 حجم: {gb_label}\n"
+        f"👤 یوزرنیم سرویس: {username_eff}\n"
+        f"💵 مبلغ: {tmn:,} تومان"
+    )
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تایید ✅", callback_data=f"plan:confirm:{tpl_id}"), InlineKeyboardButton(text="انصراف ❌", callback_data="plan:cancel")]])
     await cb.message.answer(text, reply_markup=kb)
     await cb.answer()
