@@ -4,6 +4,8 @@ from typing import Dict, List, Tuple, Optional
 from decimal import Decimal
 from datetime import datetime
 import re
+import random
+import string
 
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -317,7 +319,7 @@ async def admin_users_numeric_inputs(message: Message) -> None:
             _USER_INTENTS.pop(admin_id, None)
             # notify user
             try:
-                await message.bot.send_message(chat_id=u.telegram_id, text=f"✅ شارژ دستی توسط ادمین: +{toman:,} تومان\nموجودی جدید: {int(Decimal(u.balance or 0)/Decimal('10')):,} تومان")
+                await message.bot.send_message(chat_id=u.telegram_id, text=f"✅💳 شارژ دستی توسط ادمین: +{toman:,} تومان\n👛 موجودی جدید: {int(Decimal(u.balance or 0)/Decimal('10')):,} تومان")
             except Exception:
                 pass
             # refresh detail
@@ -340,7 +342,7 @@ async def admin_users_numeric_inputs(message: Message) -> None:
             _USER_INTENTS.pop(admin_id, None)
             # notify user
             try:
-                await message.bot.send_message(chat_id=u.telegram_id, text=f"به سرویس شما {gb}GB توسط ادمین اضافه شد.")
+                await message.bot.send_message(chat_id=u.telegram_id, text=f"📈 به سرویس شما {gb}GB توسط ادمین اضافه شد.")
             except Exception:
                 pass
             text, kb = await _render_user_detail(u)
@@ -363,7 +365,7 @@ async def admin_users_numeric_inputs(message: Message) -> None:
             _USER_INTENTS.pop(admin_id, None)
             # notify user
             try:
-                await message.bot.send_message(chat_id=u.telegram_id, text=f"سرویس شما {days} روز توسط ادمین تمدید شد.")
+                await message.bot.send_message(chat_id=u.telegram_id, text=f"⏳ سرویس شما {days} روز توسط ادمین تمدید شد.")
             except Exception:
                 pass
             await message.answer("تمدید انجام شد.")
@@ -583,16 +585,47 @@ async def cb_users_grant_confirm(cb: CallbackQuery) -> None:
     if not (u and p):
         await cb.answer("not found", show_alert=True)
         return
-    # Provision via UI-safe flow; record order with amount=0 (admin grant)
+    # Ask for username selection method
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"استفاده از یوزرنیم فعلی: {u.marzban_username}", callback_data=f"users:grantuse:{uid}:{tpl_id}")],
+        [InlineKeyboardButton(text="ساخت یوزرنیم رندوم", callback_data=f"users:grantrnd:{uid}:{tpl_id}")],
+        [InlineKeyboardButton(text="یوزرنیم دلخواه ✏️", callback_data=f"users:grantcust:{uid}:{tpl_id}")],
+        [InlineKeyboardButton(text="⬅️ بازگشت", callback_data=f"users:grant:{uid}:1")],
+    ])
+    try:
+        await cb.message.answer("لطفاً روش انتخاب یوزرنیم را انتخاب کنید:", reply_markup=kb)
+    except Exception:
+        await cb.message.answer("لطفاً روش انتخاب یوزرنیم را انتخاب کنید:", reply_markup=kb)
+    await cb.answer()
+
+
+async def _get_sub_domain() -> str:
+    import os
+    return os.getenv("SUB_DOMAIN_PREFERRED", "")
+
+# ===== Username selection and provisioning helpers =====
+_GRANT_CUSTOM_INTENT: Dict[int, Tuple[int, int]] = {}
+
+
+def _gen_username_random(tg_id: int) -> str:
+    suffix = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(3))
+    return f"tg{tg_id}{suffix}"
+
+
+async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
+    # Returns (ok, error_message)
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.id == uid))
+        p = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
+    if not (u and p):
+        return False, "not found"
     try:
         info = await ops.provision_for_plan(u.marzban_username, p)
     except Exception:
-        await cb.answer("provision error", show_alert=True)
-        return
+        return False, "provision error"
     # Persist order and token
     async with session_scope() as session:
         u2 = await session.scalar(select(User).where(User.id == uid))
-        # Create order snapshot with amount=0
         o = Order(
             user_id=u2.id,
             plan_id=p.id,
@@ -614,7 +647,6 @@ async def cb_users_grant_confirm(cb: CallbackQuery) -> None:
             provisioned_at=datetime.utcnow(),
         )
         session.add(o)
-        # Extract token if available
         token = None
         try:
             sub_url = info.get("subscription_url", "") if isinstance(info, dict) else ""
@@ -624,7 +656,7 @@ async def cb_users_grant_confirm(cb: CallbackQuery) -> None:
         if token:
             u2.subscription_token = token
         await session.commit()
-    # Notify user with links
+    # Notify user
     try:
         sub_domain = (await _get_sub_domain())
         msg_lines = [
@@ -637,12 +669,108 @@ async def cb_users_grant_confirm(cb: CallbackQuery) -> None:
                 f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray",
                 f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
             ]
-        await cb.message.bot.send_message(chat_id=u.telegram_id, text="\n".join(msg_lines))
+        await router.bot.send_message(chat_id=u2.telegram_id, text="\n".join(msg_lines))
     except Exception:
         pass
+    return True, ""
+
+
+@router.callback_query(F.data.startswith("users:grantuse:"))
+async def cb_users_grant_use(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        _, _, uid_str, tpl_str = cb.data.split(":")
+        uid = int(uid_str)
+        tpl_id = int(tpl_str)
+    except Exception:
+        await cb.answer("bad args", show_alert=True)
+        return
+    ok, err = await _provision_and_record(uid, tpl_id)
+    if not ok:
+        await cb.answer(err, show_alert=True)
+        return
     await cb.answer("granted")
 
 
-async def _get_sub_domain() -> str:
-    import os
-    return os.getenv("SUB_DOMAIN_PREFERRED", "")
+@router.callback_query(F.data.startswith("users:grantrnd:"))
+async def cb_users_grant_random(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        _, _, uid_str, tpl_str = cb.data.split(":")
+        uid = int(uid_str)
+        tpl_id = int(tpl_str)
+    except Exception:
+        await cb.answer("bad args", show_alert=True)
+        return
+    # Generate and set random username including tg_id
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.id == uid))
+        if not u:
+            await cb.answer("user not found", show_alert=True)
+            return
+        for _ in range(10):
+            candidate = _gen_username_random(u.telegram_id)
+            exists = await session.scalar(select(User.id).where(User.marzban_username == candidate))
+            if not exists:
+                u.marzban_username = candidate
+                await session.commit()
+                break
+        else:
+            await cb.answer("failed to generate username", show_alert=True)
+            return
+    ok, err = await _provision_and_record(uid, tpl_id)
+    if not ok:
+        await cb.answer(err, show_alert=True)
+        return
+    await cb.answer("granted")
+
+
+@router.callback_query(F.data.startswith("users:grantcust:"))
+async def cb_users_grant_custom_prompt(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        _, _, uid_str, tpl_str = cb.data.split(":")
+        uid = int(uid_str)
+        tpl_id = int(tpl_str)
+    except Exception:
+        await cb.answer("bad args", show_alert=True)
+        return
+    _GRANT_CUSTOM_INTENT[cb.from_user.id] = (uid, tpl_id)
+    await cb.message.answer("یوزرنیم دلخواه را ارسال کنید (فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر).")
+    await cb.answer()
+
+
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _GRANT_CUSTOM_INTENT and isinstance(getattr(m, "text", None), str))
+async def admin_users_grant_custom_username(message: Message) -> None:
+    admin_id = message.from_user.id
+    if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
+        _GRANT_CUSTOM_INTENT.pop(admin_id, None)
+        await message.answer(_admin_only())
+        return
+    text = (message.text or "").strip()
+    if not re.fullmatch(r"[a-z0-9]{6,}", text):
+        await message.answer("فرمت نامعتبر است. فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر.")
+        return
+    uid, tpl_id = _GRANT_CUSTOM_INTENT.pop(admin_id)
+    async with session_scope() as session:
+        exists = await session.scalar(select(User.id).where(User.marzban_username == text))
+        if exists:
+            await message.answer("این یوزرنیم قبلاً استفاده شده است. مورد دیگری ارسال کنید.")
+            return
+        u = await session.scalar(select(User).where(User.id == uid))
+        if not u:
+            await message.answer("کاربر یافت نشد.")
+            return
+        u.marzban_username = text
+        await session.commit()
+    ok, err = await _provision_and_record(uid, tpl_id)
+    if not ok:
+        await message.answer(f"خطا: {err}")
+        return
+    await message.answer("سرویس با یوزرنیم دلخواه فعال شد.")
