@@ -100,7 +100,7 @@ async def handle_account(message: Message) -> None:
         status = e.response.status_code if e.response is not None else None
         if status == 404:
             await message.answer(
-                "ا��انت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید."
+                "اکانت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید."
             )
         else:
             await message.answer("خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")

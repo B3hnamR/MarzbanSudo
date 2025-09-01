@@ -13,6 +13,7 @@ from app.db.session import session_scope
 from app.db.models import User, WalletTopUp, Setting
 from app.services.audit import log_audit
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE, get_admin_ids
+from app.utils.username import tg_username
 
 router = Router()
 
@@ -222,8 +223,18 @@ async def wallet_menu(message: Message) -> None:
     async with session_scope() as session:
         user = await session.scalar(select(User).where(User.telegram_id == tg_id))
         if not user:
-            await message.answer("ابتدا یک سفارش ایجاد کنید تا حساب کاربری ساخته شود.")
-            return
+            # Auto-register minimal user record to enable wallet usage before first purchase
+            username = tg_username(tg_id)
+            user = User(
+                telegram_id=tg_id,
+                marzban_username=username,
+                subscription_token=None,
+                status="active",
+                data_limit_bytes=0,
+                balance=0,
+            )
+            session.add(user)
+            await session.flush()
         bal = Decimal(user.balance or 0)
         min_amt = await _get_min_topup(session)
         options = _amount_options(min_amt)
@@ -427,8 +438,18 @@ async def handle_wallet_photo(message: Message) -> None:
     async with session_scope() as session:
         user = await session.scalar(select(User).where(User.telegram_id == tg_id))
         if not user:
-            await message.answer("حساب کاربری یافت نشد.")
-            return
+            # Auto-register minimal user to attach the top-up
+            username = tg_username(tg_id)
+            user = User(
+                telegram_id=tg_id,
+                marzban_username=username,
+                subscription_token=None,
+                status="active",
+                data_limit_bytes=0,
+                balance=0,
+            )
+            session.add(user)
+            await session.flush()
         min_irr = await _get_min_topup(session)
         max_irr = await _get_max_topup(session)
         if amount < min_irr:
