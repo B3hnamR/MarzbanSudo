@@ -420,18 +420,16 @@ async def cb_plan_confirm(cb: CallbackQuery) -> None:
     except Exception:
         pass
     # Ensure username selection applied (rename if changed) then proceed
+    # Ensure DB user exists; do not rename here (multi-service)
     sel = _PURCHASE_SELECTION.get(cb.from_user.id)
     if sel and sel[0] == tpl_id:
-        chosen_username = sel[1]
-        # Persist in DB and replace on Marzban if needed
         async with session_scope() as session:
             db_user = (await session.execute(select(User).where(User.telegram_id == cb.from_user.id))).scalars().first()
             if not db_user:
-                # Auto-create DB user record
                 from app.utils.username import tg_username as _tg
                 db_user = User(
                     telegram_id=cb.from_user.id,
-                    marzban_username=chosen_username or _tg(cb.from_user.id),
+                    marzban_username=sel[1] or _tg(cb.from_user.id),
                     subscription_token=None,
                     status="active",
                     data_limit_bytes=0,
@@ -439,18 +437,6 @@ async def cb_plan_confirm(cb: CallbackQuery) -> None:
                 )
                 session.add(db_user)
                 await session.flush()
-            old = db_user.marzban_username or tg_username(cb.from_user.id)
-            if chosen_username and chosen_username != old:
-                db_user.marzban_username = chosen_username
-                await session.commit()
-                try:
-                    await ops.replace_user_username(old, chosen_username, note=f"purchase tpl:{tpl_id}")
-                except Exception:
-                    await cb.message.answer("خطا در به‌روز رسانی نام کاربری در پنل.")
-                    await cb.answer()
-                    return
-        # Clear selection after applying
-        _PURCHASE_SELECTION.pop(cb.from_user.id, None)
     # Proceed with purchase
     await _do_purchase(cb, tpl_id)
 
@@ -490,17 +476,16 @@ async def cb_plan_final(cb: CallbackQuery) -> None:
     except Exception:
         pass
     # Ensure username selection applied (rename if changed) then proceed
+    # Ensure DB user exists; do not rename here (multi-service)
     sel = _PURCHASE_SELECTION.get(cb.from_user.id)
     if sel and sel[0] == tpl_id:
-        chosen_username = sel[1]
-        # Persist in DB and replace on Marzban if needed
         async with session_scope() as session:
             db_user = (await session.execute(select(User).where(User.telegram_id == cb.from_user.id))).scalars().first()
             if not db_user:
                 from app.utils.username import tg_username as _tg
                 db_user = User(
                     telegram_id=cb.from_user.id,
-                    marzban_username=chosen_username or _tg(cb.from_user.id),
+                    marzban_username=sel[1] or _tg(cb.from_user.id),
                     subscription_token=None,
                     status="active",
                     data_limit_bytes=0,
@@ -508,17 +493,6 @@ async def cb_plan_final(cb: CallbackQuery) -> None:
                 )
                 session.add(db_user)
                 await session.flush()
-            old = db_user.marzban_username or tg_username(cb.from_user.id)
-            if chosen_username and chosen_username != old:
-                db_user.marzban_username = chosen_username
-                await session.commit()
-                try:
-                    await ops.replace_user_username(old, chosen_username, note=f"purchase tpl:{tpl_id}")
-                except Exception:
-                    await cb.message.answer("خطا در به‌روز رسانی نام کاربری در پنل.")
-                    await cb.answer()
-                    return
-        _PURCHASE_SELECTION.pop(cb.from_user.id, None)
     await _do_purchase(cb, tpl_id)
 
 @router.callback_query(F.data == "plan:cancel")
@@ -616,6 +590,9 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
                     token = sub_url.rstrip("/").split("/")[-1] if sub_url else None
                     if token:
                         usvc.last_token = token
+            # Capture delivery target (service)
+            deliver_username = usvc.username
+            deliver_sid = usvc.id
             # Mark order provisioned
             order.status = "provisioned"
             order.paid_at = order.updated_at = order.provisioned_at = datetime.utcnow()
@@ -645,7 +622,7 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
         # Post-purchase delivery: direct configs, copy-all, QR, manage account
         try:
             client = await get_client()
-            info2 = await client.get_user(db_user.marzban_username or username)
+            info2 = await client.get_user(deliver_username)
         except Exception:
             info2 = {}
         finally:
@@ -657,7 +634,7 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
         sub_url = info2.get("subscription_url") or ""
         token2 = token or (sub_url.rstrip("/").split("/")[-1] if sub_url else None)
         # Manage/Copy buttons
-        manage_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 مدیریت اکانت", callback_data="acct:refresh"), InlineKeyboardButton(text="📋 کپی همه", callback_data="acct:copyall")]])
+        manage_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 مدیریت سرویس", callback_data=f"acct:svc:{deliver_sid}"), InlineKeyboardButton(text="📋 کپی همه", callback_data=f"acct:copyall:svc:{deliver_sid}")]])
         # Send textual configs as headered code blocks (HTML), chunked safely
         if links:
             encoded = [html.escape(str(ln).strip()) for ln in links if str(ln).strip()]
