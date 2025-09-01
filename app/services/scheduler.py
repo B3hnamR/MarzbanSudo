@@ -41,8 +41,7 @@ async def job_notify_usage() -> None:
         users = (await session.execute(select(User).where(User.status == "active"))).scalars().all()
         for u in users:
             try:
-                if not u.subscription_token:
-                    continue
+                # Use username directly; token may be absent but API works with username
                 data = await mz_get_user(u.marzban_username)
                 limit = int(data.get("data_limit") or 0)
                 used = int(data.get("used_traffic") or 0)
