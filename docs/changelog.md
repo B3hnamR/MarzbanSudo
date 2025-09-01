@@ -555,3 +555,40 @@ Outcome: Admin can search/manage users reliably, perform numeric operations with
   - Edit: app/db/models.py – balance, price, amount, plan_price now typed as Decimal to align with Numeric(12,2) and avoid precision issues.
 
 Outcome: Improved runtime stability (admin moderation of media), reduced operational misconfigurations (DB password alignment), clearer migrations path, consistent admin handling, basic worker health monitoring, and better financial precision without DB schema changes.
+
+---
+
+## 2025-09-02 – Username selection (user), account disabled UX, Admin Users UI/search, and log noise suppression
+
+- Plans (user purchase)
+  - Added username selection step before purchase confirmation with three options:
+    - Use current username (DB-resolved or tg_<id> fallback)
+    - Generate random username including Telegram ID (format: tg{tg_id}{3 chars})
+    - Enter custom username (validated by regex [a-z0-9]{6,}; uniqueness enforced)
+  - Implemented final confirmation handler (plan:final) to proceed after preview; previously confirmation did not trigger purchase in the new flow.
+  - On username change, persist to DB and call replace_user_username to update Marzban (delete old best-effort, create minimal new) to avoid duplicates; then provision and deliver configs.
+  - Confirmation text shows plan title, duration, data limit, effective username, and price.
+
+- Admin Users (grants and UI)
+  - Random/Custom grant flows now use replace_user_username to avoid duplicate users when renaming; then provision and snapshot order (amount=0) and notify user with links.
+  - User notifications include emojis for admin-side actions (credit/add GB/extend) for clearer UX.
+  - List-All view redesigned (PAGE_SIZE=5) to show per row: "🆔 tg:<id> | 👤 <username or ->" with pagination; management buttons mirror the same label. Removed the separate "buyers" view per request.
+  - Search results now also display both tg ID and username on lines and buttons.
+  - Search sources expanded and normalized: Marzban username (LIKE), Telegram ID (digits), Telegram username from settings key USER:{tg_id}:TG_USERNAME (stored lowercase on /start), and phone tail as fallback.
+
+- Start handler
+  - Stores/updates Telegram username into settings under USER:{tg_id}:TG_USERNAME (lowercased) to enable reliable search by Telegram handle.
+
+- Account view
+  - Always resolves effective username from DB (fallback tg_<id>), fixing prior 404 and variable reference issue.
+  - If Marzban status is disabled, hide token/links/configs, zero out usage/expiry display, and append a clear banned message. Links/QR/CopyAll actions are blocked for disabled accounts.
+
+- Marzban client/ops
+  - client.get_user allows 404 without logging noisy errors (re-raises cleanly for friendly handling upstream).
+  - ops.delete_user allows 404 to avoid error logs when the user is already absent.
+  - Introduced replace_user_username(old,new[,note]) helper to rename users atomically in Marzban (delete old best-effort + minimal create new) and used it in admin grants and user purchases.
+
+- Router ordering
+  - Ensured admin_users router is included before wallet so admin numeric handlers take precedence (prevents wallet numeric capture during admin operations).
+
+Outcome: Users can choose usernames safely during purchase, banned accounts don’t leak configs, admin grants don’t leave duplicate users in Marzban, the admin users UI is clearer with 5-per-page listing and combined identifiers, searches are more robust, and expected 404s no longer clutter logs.
