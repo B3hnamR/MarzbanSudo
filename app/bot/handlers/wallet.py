@@ -12,7 +12,7 @@ from sqlalchemy import select, update, desc
 from app.db.session import session_scope
 from app.db.models import User, WalletTopUp, Setting
 from app.services.audit import log_audit
-from app.services.security import has_capability_async, CAP_WALLET_MODERATE
+from app.services.security import has_capability_async, CAP_WALLET_MODERATE, get_admin_ids
 
 router = Router()
 
@@ -170,13 +170,6 @@ async def admin_wallet_pending_topups(message: Message) -> None:
                 await message.answer(caption, reply_markup=kb)
 
 
-def _admin_ids() -> set[int]:
-    raw = os.getenv("TELEGRAM_ADMIN_IDS", "")
-    return {int(x.strip()) for x in raw.split(",") if x.strip().isdigit()}
-
-
-def _is_admin_user_id(uid: int | None) -> bool:
-    return bool(uid and uid in _admin_ids())
 
 # In-memory intent storage (per-process)
 _TOPUP_INTENT: Dict[int, Decimal] = {}
@@ -458,8 +451,7 @@ async def handle_wallet_photo(message: Message) -> None:
         await session.commit()
     await message.answer("درخواست شارژ ثبت شد و برای ادمین ارسال گردید.")
     # Forward to admins
-    admin_raw = os.getenv("TELEGRAM_ADMIN_IDS", "")
-    admin_ids = [int(x.strip()) for x in admin_raw.split(",") if x.strip().isdigit()]
+    admin_ids = list(get_admin_ids())
     if admin_ids:
         caption = (
             f"درخواست شارژ کیف پول\n"
