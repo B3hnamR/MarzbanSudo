@@ -60,6 +60,11 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data
     command: python -c "import asyncio; from app.services.scheduler import run_scheduler; asyncio.run(run_scheduler())"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import importlib; importlib.import_module('app.services.scheduler'); print('ok')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
     deploy:
       resources:
         limits:

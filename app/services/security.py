@@ -31,6 +31,13 @@ def is_admin_uid(uid: int | None) -> bool:
     return bool(uid and uid in _admin_ids())
 
 
+def get_admin_ids() -> Set[int]:
+    """Return the set of admin Telegram user IDs from ENV/DB.
+    Currently resolves from ENV (TELEGRAM_ADMIN_IDS) and optional DB overrides in future.
+    """
+    return _admin_ids()
+
+
 async def _load_user_caps(uid: int) -> Set[str]:
     # DB override: Setting key = f"ADMIN_CAPS:{uid}", value = CSV of caps or "*"
     async with session_scope() as session:

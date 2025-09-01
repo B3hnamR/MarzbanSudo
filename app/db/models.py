@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
+from decimal import Decimal
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -26,7 +27,7 @@ class User(Base):
     last_notified_usage_threshold: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
     last_notified_expiry_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    balance: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -38,7 +39,7 @@ class Plan(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     template_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
     title: Mapped[str] = mapped_column(String(191))
-    price: Mapped[float] = mapped_column(Numeric(12, 2))
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     currency: Mapped[str] = mapped_column(String(8), default="IRR")
     duration_days: Mapped[int] = mapped_column(Integer, default=30)
     data_limit_bytes: Mapped[int] = mapped_column(BigInteger)
@@ -57,13 +58,13 @@ class Order(Base):
     # Snapshot of plan details at purchase time (decoupled from Plan lifecycle)
     plan_template_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     plan_title: Mapped[Optional[str]] = mapped_column(String(191), nullable=True)
-    plan_price: Mapped[Optional[float]] = mapped_column(Numeric(12, 2), nullable=True)
+    plan_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
     plan_currency: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     plan_duration_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     plan_data_limit_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
     status: Mapped[str] = mapped_column(String(32), index=True, default="pending")
-    amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     currency: Mapped[str] = mapped_column(String(8), default="IRR")
     provider: Mapped[str] = mapped_column(String(32), default="manual_transfer")
     provider_ref: Mapped[Optional[str]] = mapped_column(String(191), nullable=True)

@@ -6,7 +6,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from app.db.session import session_scope
 from app.db.models import Setting
-from app.services.security import has_capability_async, CAP_WALLET_MODERATE
+from app.services.security import has_capability_async, CAP_WALLET_MODERATE, is_admin_uid
 from sqlalchemy import select
 
 # Import existing handlers to reuse their logic without showing slash commands
@@ -20,18 +20,8 @@ from app.bot.handlers.wallet import wallet_menu as wallet_menu_handler, admin_wa
 router = Router()
 
 
-def _admin_ids() -> set[int]:
-    raw = os.getenv("TELEGRAM_ADMIN_IDS", "").strip()
-    ids: set[int] = set()
-    for x in raw.split(","):
-        x = x.strip()
-        if x.isdigit():
-            ids.add(int(x))
-    return ids
-
-
 def _is_admin(msg: Message) -> bool:
-    return bool(msg.from_user and msg.from_user.id in _admin_ids())
+    return bool(msg.from_user and is_admin_uid(msg.from_user.id))
 
 
 def _user_keyboard() -> ReplyKeyboardMarkup:
