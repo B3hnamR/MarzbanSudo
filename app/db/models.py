@@ -48,12 +48,25 @@ class Plan(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class UserService(Base):
+    __tablename__ = "user_services"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    username: Mapped[str] = mapped_column(String(191), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, default="active")
+    last_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     plan_id: Mapped[Optional[int]] = mapped_column(ForeignKey("plans.id"), nullable=True)
+    user_service_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user_services.id"), nullable=True, index=True)
 
     # Snapshot of plan details at purchase time (decoupled from Plan lifecycle)
     plan_template_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
