@@ -595,7 +595,12 @@ async def cb_users_delete_service(cb: CallbackQuery) -> None:
             from sqlalchemy import delete as sa_delete
             await session.execute(sa_delete(UserService).where(UserService.id == sid))
             await session.commit()
+    await cb.message.answer("سرویس حذف شد.")
     await cb.answer("deleted")
+
+
+@router.callback_query(F.data.startswith("users:reset:"))
+async def cb_user_reset_prompt(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
         await cb.answer("No access", show_alert=True)
         return
@@ -605,20 +610,21 @@ async def cb_users_delete_service(cb: CallbackQuery) -> None:
         await cb.answer("bad id", show_alert=True)
         return
     async with session_scope() as session:
-        u = await session.scalar(select(User).where(User.id == uid))
-    if not u:
-        await cb.answer("not found", show_alert=True)
+        svcs = (await session.execute(select(UserService).where(UserService.user_id == uid).order_by(UserService.created_at.desc()))).scalars().all()
+    if not svcs:
+        await cb.message.answer("برای این کاربر سرویسی یافت نشد.")
+        await cb.answer()
         return
+    lines = ["♻️ یک سرویس را برای Reset انتخاب کنید:"]
+    kb_rows: List[List[InlineKeyboardButton]] = []
+    for s in svcs:
+        lines.append(f"- {s.username} | وضعیت: {s.status}")
+        kb_rows.append([InlineKeyboardButton(text=f"Reset {s.username}", callback_data=f"users:svcrst:{uid}:{s.id}")])
     try:
-        await ops.reset_user(u.marzban_username)
+        await cb.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
     except Exception:
-        await cb.answer("ops error", show_alert=True)
-        return
-    try:
-        await cb.message.bot.send_message(chat_id=u.telegram_id, text="اکانت شما توسط ادمین Reset شد.")
-    except Exception:
-        pass
-    await cb.answer("reset")
+        await cb.message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
+    await cb.answer()
 
 
 @router.callback_query(F.data.startswith("users:revoke:"))
