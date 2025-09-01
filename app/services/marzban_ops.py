@@ -73,7 +73,8 @@ async def update_user_limits(username: str, data_limit_gb: int | float, duration
 async def delete_user(username: str) -> None:
     client = await get_client()
     try:
-        await client._request("DELETE", f"/api/user/{username}")
+        # Ignore 404 to avoid noisy logs when user was already removed
+        await client._request("DELETE", f"/api/user/{username}", allowed_statuses={404})
     finally:
         await client.aclose()
 

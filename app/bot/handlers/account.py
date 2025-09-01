@@ -62,10 +62,12 @@ async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
         data = await client.get_user(username_eff)
     finally:
         await client.aclose()
-    token = data.get("subscription_token") or (data.get("subscription_url", "").split("/")[-1] if data.get("subscription_url") else None)
-    expire_ts = int(data.get("expire") or 0)
-    data_limit = int(data.get("data_limit") or 0)
-    used_traffic = int(data.get("used_traffic") or 0)
+    status = str(data.get("status") or "")
+    is_disabled = status.lower() == "disabled"
+    token = None if is_disabled else (data.get("subscription_token") or (data.get("subscription_url", "").split("/")[-1] if data.get("subscription_url") else None))
+    expire_ts = 0 if is_disabled else int(data.get("expire") or 0)
+    data_limit = 0 if is_disabled else int(data.get("data_limit") or 0)
+    used_traffic = 0 if is_disabled else int(data.get("used_traffic") or 0)
     remaining = max(data_limit - used_traffic, 0)
     links: List[str] = list(map(str, data.get("links") or []))
     lrm = "\u200E"
@@ -79,15 +81,21 @@ async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
         f"📉 مصرف‌شده: {_fmt_gb2(used_traffic)}",
         f"📈 باقی‌مانده: {_fmt_gb2(remaining)}",
     ]
-    if expire_ts > 0:
+    if expire_ts > 0 and not is_disabled:
         lines.append(f"⏳ انقضا: {datetime.utcfromtimestamp(expire_ts).strftime('%Y-%m-%d %H:%M:%S')} UTC")
     sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
-    if token and sub_domain:
+    if is_disabled:
+        lines.append("")
+        lines.append("🚫 اکانت شما در حال حاضر غیرفعال است. برای فعال‌سازی با پشتیبانی تماس بگیرید.")
+    elif token and sub_domain:
         lines.append("")
         lines.append(f"🔗 لینک اشتراک: https://{sub_domain}/sub4me/{token}/")
         lines.append(f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray")
         lines.append(f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json")
     # Inline text configs removed from summary; they will be sent as code blocks in a separate message for one-tap copy.
+    # Remove links if disabled
+    if is_disabled:
+        links = []
     return "\n".join(lines), token, links
 
 
@@ -151,6 +159,10 @@ async def cb_account_links(cb: CallbackQuery) -> None:
     client = await get_client()
     try:
         data = await client.get_user(username)
+        if str(data.get("status") or "").lower() == "disabled":
+            await cb.message.answer("🚫 اکانت شما در حال حاضر غیرفعال است.")
+            await cb.answer()
+            return
         links = list(map(str, data.get("links") or []))
     finally:
         await client.aclose()
@@ -218,6 +230,9 @@ async def cb_account_qr(cb: CallbackQuery) -> None:
     client = await get_client()
     try:
         data = await client.get_user(username)
+        if str(data.get("status") or "").lower() == "disabled":
+            await cb.answer("غیرفعال است", show_alert=True)
+            return
         token = data.get("subscription_token") or (data.get("subscription_url", "").split("/")[-1] if data.get("subscription_url") else None)
     finally:
         await client.aclose()
@@ -251,6 +266,9 @@ async def cb_account_copy_all(cb: CallbackQuery) -> None:
     client = await get_client()
     try:
         data = await client.get_user(username)
+        if str(data.get("status") or "").lower() == "disabled":
+            await cb.answer("غیرفعال است", show_alert=True)
+            return
         token = data.get("subscription_token") or (data.get("subscription_url", "").split("/")[-1] if data.get("subscription_url") else None)
         links = list(map(str, data.get("links") or []))
         sub_url = data.get("subscription_url") or ""
