@@ -82,7 +82,6 @@ docker compose run --rm bot alembic upgrade head
 case "$TARGET" in
   bot)
     recreate_service bot
-    wait_for_healthy bot 30
     ;;
   worker)
     recreate_service worker
@@ -91,7 +90,6 @@ case "$TARGET" in
   all)
     # Start bot first (applies runtime init), then worker (scheduler)
     recreate_service bot
-    wait_for_healthy bot 30
     recreate_service worker
     wait_for_healthy worker 30
     ;;
