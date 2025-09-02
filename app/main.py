@@ -74,6 +74,10 @@ async def main() -> None:
     dp.message.middleware(rate_limiter)
     dp.callback_query.middleware(rate_limiter)
 
+    # High-priority ban gate (must be first)
+    from app.bot.handlers import ban_gate as ban_gate_handlers  # type: ignore
+    dp.include_router(ban_gate_handlers.router)
+
     dp.include_router(router)
     dp.include_router(start_handlers.router)
     dp.include_router(plans_handlers.router)
