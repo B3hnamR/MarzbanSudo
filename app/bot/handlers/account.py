@@ -19,6 +19,7 @@ from app.marzban.client import get_client
 from app.services.marzban_ops import revoke_sub as marz_revoke_sub
 from app.services.marzban_ops import replace_user_username as ops_replace_username
 from app.utils.username import tg_username
+from app.services.security import is_admin_uid
 
 # Optional Jalali date support
 try:
@@ -95,7 +96,15 @@ async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
         f"📈 باقی‌مانده: {_fmt_gb2(remaining)}",
     ]
     if expire_ts > 0 and not is_disabled:
-        lines.append(f"⏳ انقضا: {datetime.utcfromtimestamp(expire_ts).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        try:
+            if jdatetime:
+                dt_utc = datetime.utcfromtimestamp(expire_ts)
+                jd = jdatetime.datetime.fromgregorian(datetime=dt_utc)
+                lines.append(f"⏳ انقضا: {jd.strftime('%Y/%m/%d %H:%M')}")
+            else:
+                lines.append(f"⏳ انقضا: {datetime.utcfromtimestamp(expire_ts).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        except Exception:
+            lines.append(f"⏳ انقضا: {datetime.utcfromtimestamp(expire_ts).strftime('%Y-%m-%d %H:%M:%S')} UTC")
     sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
     if is_disabled:
         lines.append("")
@@ -161,6 +170,8 @@ async def handle_account(message: Message) -> None:
     for s in svcs:
         lines.append(f"- {s.username} | وضعیت: {s.status}")
         kb_rows.append([InlineKeyboardButton(text=f"مدیریت {s.username}", callback_data=f"acct:svc:{s.id}")])
+    if is_admin_uid(message.from_user.id):
+        kb_rows.insert(0, [InlineKeyboardButton(text="⚙️ قیمت هر GB", callback_data="acct:pricegb:cfg")])
     await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
 
 
@@ -435,8 +446,10 @@ def _get_extra_gb_price_tmn() -> int:
     except Exception:
         return 20000
 
-# Pending map: user_id -> service_id
-_EXTRA_GB_PENDING: Dict[int, int] = {}
+# Pending map: user_id -> (service_id, gb)
+_EXTRA_GB_PENDING: Dict[int, Tuple[int, Decimal]] = {}
+# Admin price pending: admin_id -> True
+_ADMIN_PRICE_PENDING: Dict[int, bool] = {}
 
 
 @router.callback_query(F.data.startswith("acct:buygb:svc:"))
@@ -458,7 +471,7 @@ async def cb_account_buy_gb_svc(cb: CallbackQuery) -> None:
                 price_tmn = int(str(row.value).strip())
     except Exception:
         pass
-    _EXTRA_GB_PENDING[cb.from_user.id] = sid
+    _EXTRA_GB_PENDING[cb.from_user.id] = (sid, Decimal(0))
     await cb.message.answer(f"لطفاً میزان حجم اضافه (به GB) را وارد کنید.\n💵 قیمت هر GB: {price_tmn:,} تومان")
     await cb.answer()
 
@@ -474,19 +487,47 @@ async def msg_account_buy_gb_amount(message: Message) -> None:
     except Exception:
         await message.answer("مقدار نامعتبر است. یک عدد مثبت (مثلاً 1.5) ارسال کنید.")
         return
-    sid = _EXTRA_GB_PENDING.get(user_id)
-    if not sid:
+    tup = _EXTRA_GB_PENDING.get(user_id)
+    if not tup:
         await message.answer("درخواست نامعتبر.")
         return
-    # Load service and user
+    sid, _ = tup
+    # Load price
+    price_tmn = _get_extra_gb_price_tmn()
+    async with session_scope() as session:
+        row = await session.scalar(select(Setting).where(Setting.key == "EXTRA_GB_PRICE_TMN"))
+        if row and str(row.value).strip().isdigit():
+            price_tmn = int(str(row.value).strip())
+    cost_tmn = int((Decimal(price_tmn) * gb))
+    _EXTRA_GB_PENDING[user_id] = (sid, gb)
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تایید ✅", callback_data="acct:buygb:ok"), InlineKeyboardButton(text="انصراف ❌", callback_data="acct:buygb:cancel")]])
+    await message.answer(f"آیا از خرید {gb}GB حجم اضافه اطمینان دارید؟\n💵 هزینه: {cost_tmn:,} تومان", reply_markup=kb)
+
+
+@router.callback_query(F.data == "acct:buygb:cancel")
+async def cb_account_buy_gb_cancel(cb: CallbackQuery) -> None:
+    _EXTRA_GB_PENDING.pop(cb.from_user.id, None)
+    await cb.answer("لغو شد")
+
+
+@router.callback_query(F.data == "acct:buygb:ok")
+async def cb_account_buy_gb_ok(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    tup = _EXTRA_GB_PENDING.get(cb.from_user.id)
+    if not tup:
+        await cb.answer("منقضی شده", show_alert=True)
+        return
+    sid, gb = tup
+    # Load service, user and price
     async with session_scope() as session:
         s = await session.scalar(select(UserService).where(UserService.id == sid))
-        u = await session.scalar(select(User).where(User.telegram_id == user_id))
+        u = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
         if not (s and u):
-            _EXTRA_GB_PENDING.pop(user_id, None)
-            await message.answer("سرویس یا کاربر یافت نشد.")
+            _EXTRA_GB_PENDING.pop(cb.from_user.id, None)
+            await cb.answer("یافت نشد", show_alert=True)
             return
-        # Price lookup
         price_tmn = _get_extra_gb_price_tmn()
         row = await session.scalar(select(Setting).where(Setting.key == "EXTRA_GB_PRICE_TMN"))
         if row and str(row.value).strip().isdigit():
@@ -494,12 +535,14 @@ async def msg_account_buy_gb_amount(message: Message) -> None:
         cost_irr = (Decimal(price_tmn) * Decimal(10)) * gb
         balance = Decimal(str(u.balance or 0))
         if balance < cost_irr:
-            await message.answer(
+            _EXTRA_GB_PENDING.pop(cb.from_user.id, None)
+            await cb.answer("موجودی کافی نیست", show_alert=True)
+            await cb.message.answer(
                 "موجودی کیف پول شما کافی نیست. ابتدا شارژ کنید.\n"
                 f"💵 هزینه: {int(cost_irr/Decimal('10')):,} تومان"
             )
             return
-        # Deduct and apply
+        # Deduct
         u.balance = balance - cost_irr
         await session.commit()
     # Apply add GB
@@ -507,12 +550,14 @@ async def msg_account_buy_gb_amount(message: Message) -> None:
         from app.services import marzban_ops as ops
         await ops.add_data_gb(s.username, float(gb))
     except Exception:
-        await message.answer("خطا در اف��ودن حجم.")
+        await cb.message.answer("خطا در افزودن حجم.")
+        await cb.answer()
         return
-    _EXTRA_GB_PENDING.pop(user_id, None)
-    await message.answer(
+    _EXTRA_GB_PENDING.pop(cb.from_user.id, None)
+    await cb.message.answer(
         f"✅ {gb}GB به سرویس {s.username} افزوده شد.\n💳 مبلغ کسر شده: {int((Decimal(price_tmn)*Decimal(10)*gb)/Decimal('10')):,} تومان"
     )
+    await cb.answer("OK")
 
 
 @router.callback_query(F.data.startswith("acct:qr:svc:"))
@@ -620,6 +665,53 @@ async def cb_account_copy_all_svc(cb: CallbackQuery) -> None:
         if chunk:
             await cb.message.answer((header if first else "") + "\n\n".join(chunk), parse_mode="HTML")
     await cb.answer("Ready to copy")
+
+@router.callback_query(F.data == "acct:pricegb:cfg")
+async def cb_account_price_gb_cfg(cb: CallbackQuery) -> None:
+    if not cb.from_user or not is_admin_uid(cb.from_user.id):
+        await cb.answer("No access", show_alert=True)
+        return
+    price_tmn = _get_extra_gb_price_tmn()
+    async with session_scope() as session:
+        row = await session.scalar(select(Setting).where(Setting.key == "EXTRA_GB_PRICE_TMN"))
+        if row and str(row.value).strip().isdigit():
+            price_tmn = int(str(row.value).strip())
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تغییر قیمت ✏️", callback_data="acct:pricegb:set")]])
+    await cb.message.answer(f"⚙️ قیمت هر GB حجم اضافه: {price_tmn:,} تومان", reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "acct:pricegb:set")
+async def cb_account_price_gb_set(cb: CallbackQuery) -> None:
+    if not cb.from_user or not is_admin_uid(cb.from_user.id):
+        await cb.answer("No access", show_alert=True)
+        return
+    _ADMIN_PRICE_PENDING[cb.from_user.id] = True
+    await cb.message.answer("مبلغ هر GB را به تومان ارسال کنید (عدد صحیح).")
+    await cb.answer()
+
+
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and _ADMIN_PRICE_PENDING.get(m.from_user.id, False) and isinstance(getattr(m, "text", None), str))
+async def msg_account_price_gb_set(message: Message) -> None:
+    admin_id = message.from_user.id
+    if not is_admin_uid(admin_id):
+        _ADMIN_PRICE_PENDING.pop(admin_id, None)
+        return
+    txt = (message.text or "").strip()
+    if not txt.isdigit():
+        await message.answer("عدد صحیح به تومان ارسال کنید (مثلاً 20000).")
+        return
+    val = int(txt)
+    async with session_scope() as session:
+        row = await session.scalar(select(Setting).where(Setting.key == "EXTRA_GB_PRICE_TMN"))
+        if not row:
+            session.add(Setting(key="EXTRA_GB_PRICE_TMN", value=str(val)))
+        else:
+            row.value = str(val)
+        await session.commit()
+    _ADMIN_PRICE_PENDING.pop(admin_id, None)
+    await message.answer(f"ذخیره شد. قیمت هر GB: {val:,} تومان")
+
 
 @router.callback_query(F.data == "acct:copyall")
 async def cb_account_copy_all(cb: CallbackQuery) -> None:
