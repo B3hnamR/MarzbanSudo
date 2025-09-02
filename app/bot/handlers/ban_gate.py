@@ -5,6 +5,7 @@ from datetime import datetime
 
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import SkipHandler
 from sqlalchemy import select
 
 from app.db.session import session_scope
@@ -59,7 +60,7 @@ async def ban_gate_messages(message: Message) -> None:
         return
     tg_id = message.from_user.id
     if not await _is_banned(tg_id):
-        return
+        raise SkipHandler
     # Banned: block all except appeal flow
     status = await _get_appeal_status(tg_id)
     if _APPEAL_CAPTURE.get(tg_id, False):
@@ -107,7 +108,7 @@ async def ban_gate_callbacks(cb: CallbackQuery) -> None:
         return
     tg_id = cb.from_user.id
     if not await _is_banned(tg_id):
-        return
+        raise SkipHandler
     data = cb.data or ""
     status = await _get_appeal_status(tg_id)
 
