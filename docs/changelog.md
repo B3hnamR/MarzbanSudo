@@ -631,3 +631,60 @@ Outcome: Users can choose usernames safely during purchase, banned accounts don�
   - Admin UI labels adjusted per request; service operations aligned strictly to service usernames.
 
 Outcome: Multi-service is fully usable for both users and admins. Purchases can be new or extend per-service; account screens are service-aware; admin actions apply precisely to the chosen service; migrations are reconciled and deploy cleanly.
+
+---
+
+## 2025-09-02 – Account UI overhaul, extra GB purchase, Jalali dates, start button rename, and admin ban toggle
+
+- Account (user)
+  - Added account summary header showing: numeric Telegram ID, shared phone (if any), total services count and split by active/disabled.
+  - Per-service management view simplified: only main subscription link is displayed; v2ray/json link lines removed; expiry shown in Jalali when jdatetime is available.
+  - Added per-service "➕ خرید حجم اضافه" button. After entering GB amount, a confirm step shows total cost; on confirm, wallet is charged and GB is added to that service.
+
+- Extra GB pricing
+  - Price per GB is read from Settings key EXTRA_GB_PRICE_TMN (Tomans). If absent, falls back to ENV EXTRA_GB_PRICE_TMN or default 20000 Toman.
+  - Admin-only control in /account: "⚙️ قیمت هر GB" to view and change the price via bot UI.
+
+- Start UI
+  - Renamed start keyboard button from "👤 اکانت" to "👤 اکانت من". Handler accepts both labels for backward compatibility.
+
+- Admin Users (bot-level ban toggle)
+  - Added a top-of-page button on user view: "⛔️ بن کاربر (ربات)" / "✅ رفع بن کاربر".
+  - Toggle stores USER:{tg_id}:BANNED, updates User.status (disabled/active), and applies set_status to all associated service usernames in Marzban accordingly. User is notified.
+
+- Dependencies
+  - requirements.txt: added jdatetime and pytz to enable Jalali date display in service pages.
+
+Outcome: Improved account UX, per-service actions, and monetization via extra GB; admin can quickly toggle full-user ban state. Jalali expiry is shown when supported by the environment.
+
+---
+
+## Planned – Global ban system (design and next steps)
+
+2) Global Ban Gate middleware
+- Add a high-priority middleware that intercepts all Message and CallbackQuery events.
+- If USER:{tg_id}:BANNED = 1/true: block all flows except the Appeal path; do not pass events to other handlers.
+- If APPEAL_STATUS ∈ {pending, denied}: always show a fixed notice; do not allow any actions (including /start). Only admins can change status.
+- Settings used:
+  - USER:{tg_id}:BANNED ∈ {0,1}
+  - USER:{tg_id}:APPEAL_STATUS ∈ {none,pending,accepted,denied}
+  - USER:{tg_id}:APPEAL_TEXT, USER:{tg_id}:APPEAL_AT (ISO timestamp)
+
+3) One-time user Appeal flow
+- On /start for banned users with APPEAL_STATUS=none: show a minimal Appeal UI with a single "📨 ارسال درخواست رفع بن" action.
+- Collect one text message from the user, store APPEAL_TEXT and set APPEAL_STATUS=pending (also store APPEAL_AT).
+- Subsequent /start while pending: show "در دست بررسی" and block any further posts. If denied: show "رد شد" and block completely.
+
+4) Admin ban-with-reason and Appeal review
+- In admin_users user view, add "⛔️ بن با دلیل" which collects a single reason text and stores USER:{tg_id}:BAN_REASON, sets BANNED=1, disables all services via set_status, and notifies the user including the reason.
+- Add an Appeal review list (pending items) or surface them in user view: actions → Accept or Reject.
+  - Accept: set BANNED=0, APPEAL_STATUS=accepted, enable all services (active), notify user.
+  - Reject: set APPEAL_STATUS=denied, notify user with optional admin note. No further appeals allowed.
+
+5) Hard lockout UX
+- For banned users: remove/hide keyboards; any command (/start, slash) returns only the ban/appeal notice. Only the one-time Appeal entry is allowed when APPEAL_STATUS=none; otherwise show the static state message.
+
+6) Secondary guards in handlers
+- Add defensive checks in sensitive handlers (e.g., /account and per-service views) to ensure no data is shown to banned users if middleware is bypassed. Return only the ban/appeal notice.
+
+Rationale: This design enforces a strict, auditable state machine for banned users, prevents accidental data exposure, provides a single-shot Appeal channel, and equips admins with reasoned ban and review controls.
