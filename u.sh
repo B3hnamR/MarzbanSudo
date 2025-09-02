@@ -64,7 +64,16 @@ fi
 log "Fetch/Pull $BRANCH..."
 git fetch --all
 git checkout "$BRANCH"
-git pull --ff-only origin "$BRANCH"
+if ! git pull --ff-only origin "$BRANCH"; then
+  err "Fast-forward not possible; attempting rebase onto origin/$BRANCH..."
+  if ! git pull --rebase --autostash origin "$BRANCH"; then
+    err "Rebase failed; attempting merge..."
+    if ! git merge --no-ff --no-edit "origin/$BRANCH"; then
+      err "Automatic merge failed. Resolve conflicts and rerun."
+      exit 2
+    fi
+  fi
+fi
 
 # --- Ensure DB and build images ---
 log "Ensure DB is up..."
@@ -85,13 +94,13 @@ case "$TARGET" in
     ;;
   worker)
     recreate_service worker
-    wait_for_healthy worker 30
+    wait_for_healthy worker 90
     ;;
   all)
     # Start bot first (applies runtime init), then worker (scheduler)
     recreate_service bot
     recreate_service worker
-    wait_for_healthy worker 30
+    wait_for_healthy worker 90
     ;;
   *)
     err "Usage: $0 [branch=main] [bot|worker|all] [auto|bot|worker]"
