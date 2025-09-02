@@ -5,6 +5,7 @@ import html
 import re
 from datetime import datetime, timedelta
 from typing import List, Tuple, Dict
+from decimal import Decimal
 
 from aiogram import Router, F
 import httpx
@@ -18,6 +19,12 @@ from app.marzban.client import get_client
 from app.services.marzban_ops import revoke_sub as marz_revoke_sub
 from app.services.marzban_ops import replace_user_username as ops_replace_username
 from app.utils.username import tg_username
+
+# Optional Jalali date support
+try:
+    import jdatetime  # type: ignore
+except Exception:  # pragma: no cover
+    jdatetime = None
 
 router = Router()
 
@@ -132,8 +139,24 @@ async def handle_account(message: Message) -> None:
         except Exception:
             await message.answer("اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
         return
-    # Render service list and management buttons
-    lines = ["👤 سرویس‌های شما:"]
+    # Render account summary + services list
+    # Load phone from settings
+    phone_txt = "—"
+    async with session_scope() as session:
+        row_p = await session.scalar(select(Setting).where(Setting.key == f"USER:{message.from_user.id}:PHONE"))
+        if row_p and str(row_p.value).strip():
+            phone_txt = str(row_p.value).strip()
+    total = len(svcs)
+    active_cnt = sum(1 for s in svcs if str(s.status or '').lower() == 'active')
+    disabled_cnt = sum(1 for s in svcs if str(s.status or '').lower() == 'disabled')
+    lines = [
+        "🔎 اطلاعات حساب کاربری شما:",
+        f"👤 آیدی عددی: {message.from_user.id}",
+        f"📱 شماره: {phone_txt}",
+        f"🧩 تعداد سرویس‌ها: {total} | ✅ فعال: {active_cnt} | 🚫 غیرفعال: {disabled_cnt}",
+        "",
+        "👤 سرویس‌های شما:",
+    ]
     kb_rows: List[List[InlineKeyboardButton]] = []
     for s in svcs:
         lines.append(f"- {s.username} | وضعیت: {s.status}")
@@ -208,13 +231,23 @@ async def cb_account_service_view(cb: CallbackQuery) -> None:
     lrm = "\u200E"
     lines = [
         f"👤 نام کاربری: {s.username}",
-        f"🆔 شناسه تلگرام: {lrm}{cb.from_user.id}",
         f"📦 حجم کل: {_fmt_gb2(data_limit)}",
         f"📉 مصرف‌شده: {_fmt_gb2(used_traffic)}",
         f"📈 باقی‌مانده: {_fmt_gb2(remaining)}",
     ]
     if expire_ts > 0 and not is_disabled:
-        lines.append(f"⏳ انقضا: {datetime.utcfromtimestamp(expire_ts).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        try:
+            if jdatetime:
+                # Convert to Jalali date, Tehran time
+                import pytz  # type: ignore
+                tehran = pytz.timezone('Asia/Tehran')
+                dt = datetime.fromtimestamp(expire_ts, tehran)
+                jd = jdatetime.datetime.fromgregorian(datetime=dt)
+                lines.append(f"⏳ انقضا: {jd.strftime('%Y/%m/%d %H:%M')} 🇮🇷")
+            else:
+                lines.append(f"⏳ انقضا: {datetime.utcfromtimestamp(expire_ts).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        except Exception:
+            lines.append(f"⏳ انقضا: {datetime.utcfromtimestamp(expire_ts).strftime('%Y-%m-%d %H:%M:%S')} UTC")
     sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
     if is_disabled:
         lines.append("")
@@ -222,11 +255,10 @@ async def cb_account_service_view(cb: CallbackQuery) -> None:
     elif token and sub_domain:
         lines.append("")
         lines.append(f"🔗 لینک اشتراک: https://{sub_domain}/sub4me/{token}/")
-        lines.append(f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray")
-        lines.append(f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json")
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📄 کانفیگ‌ها (متنی)", callback_data=f"acct:links:svc:{s.id}"), InlineKeyboardButton(text="📋 کپی همه", callback_data=f"acct:copyall:svc:{s.id}")],
         [InlineKeyboardButton(text="🔳 QR اشتراک", callback_data=f"acct:qr:svc:{s.id}")],
+        [InlineKeyboardButton(text="➕ خرید حجم اضافه", callback_data=f"acct:buygb:svc:{s.id}")],
     ])
     await cb.message.answer("\n".join(lines), reply_markup=kb)
     await cb.answer()
@@ -390,6 +422,97 @@ async def cb_account_qr(cb: CallbackQuery) -> None:
     except Exception:
         await cb.message.answer(url)
     await cb.answer()
+
+
+def _get_extra_gb_price_tmn() -> int:
+    # Try settings; fallback to ENV; else default
+    import os
+    try:
+        # Note: synchronous helper; called inside handlers
+        # Will read from DB in async contexts where needed
+        val_env = os.getenv("EXTRA_GB_PRICE_TMN", "20000").strip()
+        return int(val_env) if val_env.isdigit() else 20000
+    except Exception:
+        return 20000
+
+# Pending map: user_id -> service_id
+_EXTRA_GB_PENDING: Dict[int, int] = {}
+
+
+@router.callback_query(F.data.startswith("acct:buygb:svc:"))
+async def cb_account_buy_gb_svc(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    try:
+        sid = int(cb.data.split(":")[3])
+    except Exception:
+        await cb.answer("bad id", show_alert=True)
+        return
+    # Read price from settings if exists
+    price_tmn = _get_extra_gb_price_tmn()
+    try:
+        async with session_scope() as session:
+            row = await session.scalar(select(Setting).where(Setting.key == "EXTRA_GB_PRICE_TMN"))
+            if row and str(row.value).strip().isdigit():
+                price_tmn = int(str(row.value).strip())
+    except Exception:
+        pass
+    _EXTRA_GB_PENDING[cb.from_user.id] = sid
+    await cb.message.answer(f"لطفاً میزان حجم اضافه (به GB) را وارد کنید.\n💵 قیمت هر GB: {price_tmn:,} تومان")
+    await cb.answer()
+
+
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _EXTRA_GB_PENDING and isinstance(getattr(m, "text", None), str))
+async def msg_account_buy_gb_amount(message: Message) -> None:
+    user_id = message.from_user.id
+    txt = (message.text or "").strip().replace(",", ".")
+    try:
+        gb = Decimal(txt)
+        if gb <= 0:
+            raise ValueError
+    except Exception:
+        await message.answer("مقدار نامعتبر است. یک عدد مثبت (مثلاً 1.5) ارسال کنید.")
+        return
+    sid = _EXTRA_GB_PENDING.get(user_id)
+    if not sid:
+        await message.answer("درخواست نامعتبر.")
+        return
+    # Load service and user
+    async with session_scope() as session:
+        s = await session.scalar(select(UserService).where(UserService.id == sid))
+        u = await session.scalar(select(User).where(User.telegram_id == user_id))
+        if not (s and u):
+            _EXTRA_GB_PENDING.pop(user_id, None)
+            await message.answer("سرویس یا کاربر یافت نشد.")
+            return
+        # Price lookup
+        price_tmn = _get_extra_gb_price_tmn()
+        row = await session.scalar(select(Setting).where(Setting.key == "EXTRA_GB_PRICE_TMN"))
+        if row and str(row.value).strip().isdigit():
+            price_tmn = int(str(row.value).strip())
+        cost_irr = (Decimal(price_tmn) * Decimal(10)) * gb
+        balance = Decimal(str(u.balance or 0))
+        if balance < cost_irr:
+            await message.answer(
+                "موجودی کیف پول شما کافی نیست. ابتدا شارژ کنید.\n"
+                f"💵 هزینه: {int(cost_irr/Decimal('10')):,} تومان"
+            )
+            return
+        # Deduct and apply
+        u.balance = balance - cost_irr
+        await session.commit()
+    # Apply add GB
+    try:
+        from app.services import marzban_ops as ops
+        await ops.add_data_gb(s.username, float(gb))
+    except Exception:
+        await message.answer("خطا در اف��ودن حجم.")
+        return
+    _EXTRA_GB_PENDING.pop(user_id, None)
+    await message.answer(
+        f"✅ {gb}GB به سرویس {s.username} افزوده شد.\n💳 مبلغ کسر شده: {int((Decimal(price_tmn)*Decimal(10)*gb)/Decimal('10')):,} تومان"
+    )
 
 
 @router.callback_query(F.data.startswith("acct:qr:svc:"))
