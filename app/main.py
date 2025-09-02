@@ -20,6 +20,7 @@ from app.bot.handlers import trial as trial_handlers
 from app.bot.handlers import wallet as wallet_handlers
 from app.bot.handlers import admin_users as admin_users_handlers
 from app.bot.middlewares.rate_limit import RateLimitMiddleware
+from app.bot.middlewares.ban_gate import BanGateMiddleware
 
 try:
     # Optional: load .env in non-production environments
@@ -70,13 +71,13 @@ async def main() -> None:
         max_per_min = int(os.getenv("RATE_LIMIT_USER_MSG_PER_MIN", "20"))
     except ValueError:
         max_per_min = 20
+    # High-priority ban gate middleware (must be first)
+    dp.message.middleware(BanGateMiddleware())
+    dp.callback_query.middleware(BanGateMiddleware())
+
     rate_limiter = RateLimitMiddleware(max_per_minute=max_per_min)
     dp.message.middleware(rate_limiter)
     dp.callback_query.middleware(rate_limiter)
-
-    # High-priority ban gate (must be first)
-    from app.bot.handlers import ban_gate as ban_gate_handlers  # type: ignore
-    dp.include_router(ban_gate_handlers.router)
 
     dp.include_router(router)
     dp.include_router(start_handlers.router)
