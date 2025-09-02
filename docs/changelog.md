@@ -592,3 +592,42 @@ Outcome: Improved runtime stability (admin moderation of media), reduced operati
   - Ensured admin_users router is included before wallet so admin numeric handlers take precedence (prevents wallet numeric capture during admin operations).
 
 Outcome: Users can choose usernames safely during purchase, banned accounts don’t leak configs, admin grants don’t leave duplicate users in Marzban, the admin users UI is clearer with 5-per-page listing and combined identifiers, searches are more robust, and expected 404s no longer clutter logs.
+
+---
+
+## 2025-09-02 – Multi-service: purchase (new vs extend), per-service Account/Admin, Alembic merge
+
+- DB & Alembic
+  - New: UserService model and orders.user_service_id field (app/db/models.py).
+  - New migration: app/db/migrations/versions/20250902_000003_user_services.py (adds user_services; adds orders.user_service_id).
+  - Fixed Alembic “Multiple head revisions” by creating merge revision 57f59ce08341 that merges heads 20250830_000003_order_snapshot and 20250902_000003_user_services.
+
+- Plans (purchase flow)
+  - Implemented purchase mode selection: 🆕 اکانت جدید vs 🔁 تمدید اکانت.
+  - Extend: user selects from their services; provisioning runs on the selected service username; order.user_service_id is recorded; last_token synced.
+  - New: provisioning runs on the selected/new username; upserts UserService; order.user_service_id recorded; last_token synced.
+  - Removed “استفاده از یوزرنیم فعلی” option for new purchases to avoid confusion; only Random/Custom are offered.
+  - Do not rename the user’s main username on confirm for new purchases (prevents breaking older services).
+  - Delivery (links/configs/QR) is bound to the specific service just created/extended; buttons link to per-service views (acct:svc:{id}, acct:copyall:svc:{id}).
+
+- Account (user)
+  - /account lists all services (username, status) with a Manage button per service.
+  - Per-service view shows usage/expiry and provides per-service actions: text configs, copy-all, QR.
+  - Disabled services are guarded: no token/links/QR/configs shown.
+  - If no services exist, falls back to single-summary view for onboarding.
+
+- Admin Users (per-service management and UI)
+  - “All users” list shows: tg:<id> and Telegram handle (@handle) on rows and Manage buttons.
+  - Per-user page lists services; per-service manage view includes: Add GB, Extend days, Reset, Revoke, Delete.
+  - Numeric handler hardened:
+    - Clears _SEARCH_INTENT when entering service numeric flows (add GB/extend) so digits aren’t captured by search.
+    - Uses _SVC_INTENTS to target the exact service; fixes “کاربر یافت نشد” during numeric inputs.
+  - users:reset now prompts to select one service to reset (no broad user-level reset).
+  - users:svcdel deletes only the selected service and no longer triggers an unintended reset on the user’s main username.
+
+- Bug fixes and polish
+  - Prevent accidental rename of the user’s main username during new service purchases.
+  - Delivery and post-purchase buttons use the newly created/extended service context to avoid 404s on stale usernames.
+  - Admin UI labels adjusted per request; service operations aligned strictly to service usernames.
+
+Outcome: Multi-service is fully usable for both users and admins. Purchases can be new or extend per-service; account screens are service-aware; admin actions apply precisely to the chosen service; migrations are reconciled and deploy cleanly.
