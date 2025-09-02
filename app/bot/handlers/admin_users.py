@@ -210,6 +210,9 @@ async def cb_user_view(cb: CallbackQuery) -> None:
     async with session_scope() as session:
         u = await session.scalar(select(User).where(User.id == uid))
         svcs = (await session.execute(select(UserService).where(UserService.user_id == uid).order_by(UserService.created_at.desc()))).scalars().all() if u else []
+        banned_row = None
+        if u:
+            banned_row = await session.scalar(select(Setting).where(Setting.key == f"USER:{u.telegram_id}:BANNED"))
     if not u:
         await cb.answer("not found", show_alert=True)
         return
@@ -217,6 +220,8 @@ async def cb_user_view(cb: CallbackQuery) -> None:
     header, _ = await _render_user_detail(u)
     lines = [header, "", "🧩 سرویس‌ها:"]
     kb_rows: List[List[InlineKeyboardButton]] = []
+    is_banned = bool(banned_row and str(banned_row.value).strip().lower() in {"1", "true"})
+    kb_rows.append([InlineKeyboardButton(text=("✅ رفع بن کاربر" if is_banned else "⛔️ بن کاربر (ربات)"), callback_data=f"users:banbot:{uid}")])
     if svcs:
         for s in svcs:
             lines.append(f"- {s.username} | وضعیت: {s.status}")
@@ -265,6 +270,86 @@ async def cb_user_ban(cb: CallbackQuery) -> None:
         await cb.message.edit_text(text, reply_markup=kb)
     except Exception:
         await cb.message.answer(text, reply_markup=kb)
+    await cb.answer("updated")
+
+
+@router.callback_query(F.data.startswith("users:banbot:"))
+async def cb_user_banbot(cb: CallbackQuery) -> None:
+    if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
+        await cb.answer("No access", show_alert=True)
+        return
+    try:
+        uid = int(cb.data.split(":")[2])
+    except Exception:
+        await cb.answer("bad id", show_alert=True)
+        return
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.id == uid))
+        if not u:
+            await cb.answer("not found", show_alert=True)
+            return
+        row = await session.scalar(select(Setting).where(Setting.key == f"USER:{u.telegram_id}:BANNED"))
+        currently_banned = bool(row and str(row.value).strip().lower() in {"1", "true"})
+        # Toggle state
+        if currently_banned:
+            # Unban
+            if row:
+                # Clear or set to 0
+                row.value = "0"
+            u.status = "active"
+            await session.commit()
+        else:
+            if not row:
+                session.add(Setting(key=f"USER:{u.telegram_id}:BANNED", value="1"))
+            else:
+                row.value = "1"
+            u.status = "disabled"
+            await session.commit()
+    # Apply status to all services
+    try:
+        # Reload services
+        async with session_scope() as session:
+            svcs = (await session.execute(select(UserService).where(UserService.user_id == uid))).scalars().all()
+            usernames = [s.username for s in svcs]
+        from app.services import marzban_ops as ops
+        target_status = "active" if currently_banned else "disabled"
+        for un in usernames:
+            try:
+                await ops.set_status(un, target_status)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Notify user
+    try:
+        await cb.message.bot.send_message(chat_id=u.telegram_id, text=("حساب شما در ربات رفع بن شد و سرویس‌ها فعال شدند." if currently_banned else "حساب شما در ربات بن شد و تمامی سرویس‌ها غیرفعال شدند."))
+    except Exception:
+        pass
+    # Refresh view
+    try:
+        async with session_scope() as session:
+            u2 = await session.scalar(select(User).where(User.id == uid))
+            svcs2 = (await session.execute(select(UserService).where(UserService.user_id == uid).order_by(UserService.created_at.desc()))).scalars().all() if u2 else []
+            banned_row = await session.scalar(select(Setting).where(Setting.key == f"USER:{u2.telegram_id}:BANNED")) if u2 else None
+        header, _ = await _render_user_detail(u2)
+        lines = [header, "", "🧩 سرویس‌ها:"]
+        kb_rows: List[List[InlineKeyboardButton]] = []
+        is_banned = bool(banned_row and str(banned_row.value).strip().lower() in {"1", "true"})
+        kb_rows.append([InlineKeyboardButton(text=("✅ رفع بن کاربر" if is_banned else "⛔️ بن کاربر (ربات)"), callback_data=f"users:banbot:{uid}")])
+        if svcs2:
+            for s in svcs2:
+                lines.append(f"- {s.username} | وضعیت: {s.status}")
+                kb_rows.append([InlineKeyboardButton(text=f"مدیریت سرویس {s.username}", callback_data=f"users:svc:{uid}:{s.id}")])
+        else:
+            lines.append("— سرویسی ثبت نشده است.")
+        kb_rows.append([InlineKeyboardButton(text="🛒 فعال‌سازی پلن", callback_data=f"users:grant:{uid}:1")])
+        kb_rows.append([InlineKeyboardButton(text="⬅️ بازگشت", callback_data="users:menu")])
+        try:
+            await cb.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
+        except Exception:
+            await cb.message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
+    except Exception:
+        pass
     await cb.answer("updated")
 
 
