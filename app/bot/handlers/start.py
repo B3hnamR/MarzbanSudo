@@ -29,7 +29,7 @@ def _user_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌ها")],
-            [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="💳 کیف پول")],
+            [KeyboardButton(text="👤 اکانت من"), KeyboardButton(text="💳 کیف پول")],
         ], resize_keyboard=True
     )
 
@@ -38,7 +38,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌های من")],
-            [KeyboardButton(text="👤 اکانت"), KeyboardButton(text="💳 کیف پول")],
+            [KeyboardButton(text="👤 اکانت من"), KeyboardButton(text="💳 کیف پول")],
             [KeyboardButton(text="💳 درخواست‌های شارژ"), KeyboardButton(text="💼 تنظیمات کیف پول")],
             [KeyboardButton(text="⚙️ مدیریت پلن‌ها"), KeyboardButton(text="📦 سفارش‌های اخیر")],
             [KeyboardButton(text="👥 مدیریت کاربران"), KeyboardButton(text="📱 تنظیمات احراز شماره")],
@@ -129,7 +129,7 @@ async def _btn_orders(message: Message) -> None:
     await orders_handler(message)
 
 
-@router.message(F.text == "👤 اکانت")
+@router.message(F.text.in_({"👤 اکانت", "👤 اکانت من"}))
 async def _btn_account(message: Message) -> None:
     await account_handler(message)
 
