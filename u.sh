@@ -78,7 +78,7 @@ fi
 # --- Ensure DB and build images ---
 log "Ensure DB is up..."
 docker compose up -d "$DB_SVC"
-wait_for_healthy "$DB_SVC" 90
+wait_for_healthy "$DB_SVC" 30
 
 log "Build images (bot, worker)..."
 docker compose build bot worker
@@ -94,13 +94,13 @@ case "$TARGET" in
     ;;
   worker)
     recreate_service worker
-    wait_for_healthy worker 90
+    wait_for_healthy worker 30
     ;;
   all)
     # Start bot first (applies runtime init), then worker (scheduler)
     recreate_service bot
     recreate_service worker
-    wait_for_healthy worker 90
+    wait_for_healthy worker 30
     ;;
   *)
     err "Usage: $0 [branch=main] [bot|worker|all] [auto|bot|worker]"
