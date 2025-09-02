@@ -2,7 +2,7 @@
 Add user_services table and orders.user_service_id
 
 Revision ID: 20250902_000003_user_services
-Revises: 20250829_000002_wallet
+Revises: 20250830_000003_order_snapshot
 Create Date: 2025-09-02 00:00:00
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "20250902_000003_user_services"
-down_revision = "20250829_000002_wallet"
+down_revision = "20250830_000003_order_snapshot"
 branch_labels = None
 depends_on = None
 

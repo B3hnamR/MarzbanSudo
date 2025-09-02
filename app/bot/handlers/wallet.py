@@ -14,6 +14,7 @@ from app.db.models import User, WalletTopUp, Setting
 from app.services.audit import log_audit
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE, get_admin_ids
 from app.utils.username import tg_username
+from app.utils.intent_store import set_intent_json, get_intent_json, clear_intent
 
 router = Router()
 
@@ -29,7 +30,7 @@ async def admin_wallet_manual_add_start(message: Message) -> None:
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     admin_id = message.from_user.id
-    _WALLET_MANUAL_ADD_INTENT[admin_id] = {"stage": "await_ref", "user_id": None, "unit": None}
+    await set_intent_json(f"INTENT:WADM:{admin_id}", {"stage": "await_ref", "user_id": None, "unit": None, "ts": datetime.utcnow().isoformat()})
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="لغو", callback_data="walletadm:add:cancel")]])
     await message.answer("👤 لطفاً شناسه کاربر را ارسال کنید (نام‌کاربری یا 🆔 تلگرام).", reply_markup=kb)
 
@@ -37,7 +38,11 @@ async def admin_wallet_manual_add_start(message: Message) -> None:
 @router.callback_query(F.data == "walletadm:add:cancel")
 async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
     uid = cb.from_user.id if cb.from_user else None
-    _WALLET_MANUAL_ADD_INTENT.pop(uid, None)
+    try:
+        if uid:
+            await clear_intent(f"INTENT:WADM:{uid}")
+    except Exception:
+        pass
     await cb.answer("لغو شد")
     try:
         await cb.message.edit_reply_markup(reply_markup=None)
@@ -45,7 +50,7 @@ async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
         pass
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _WALLET_MANUAL_ADD_INTENT and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("stage") == "await_ref" and isinstance(getattr(m, "text", None), str))
+@router.message(F.text)
 async def admin_wallet_manual_add_ref(message: Message) -> None:
     admin_id = message.from_user.id
     if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
@@ -62,7 +67,7 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
         if not user:
             await message.answer("کاربر یافت نشد. مجدد شناسه صحیح را ارسال کنید یا لغو کنید.")
             return
-        _WALLET_MANUAL_ADD_INTENT[admin_id] = {"stage": "await_unit", "user_id": user.id, "unit": None}
+        await set_intent_json(f"INTENT:WADM:{admin_id}", {"stage": "await_unit", "user_id": int(user.id), "unit": None, "ts": datetime.utcnow().isoformat()})
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="ورود مبلغ به تومان", callback_data="walletadm:add:unit:TMN"), InlineKeyboardButton(text="ورود مبلغ به ریال", callback_data="walletadm:add:unit:IRR")]])
     await message.answer("واحد مبلغ را انتخاب کنید:", reply_markup=kb)
 
@@ -70,30 +75,36 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
 @router.callback_query(F.data.startswith("walletadm:add:unit:"))
 async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
     uid = cb.from_user.id if cb.from_user else None
-    state = _WALLET_MANUAL_ADD_INTENT.get(uid)
-    if not state or state.get("stage") != "await_unit":
+    payload = await get_intent_json(f"INTENT:WADM:{uid}") if uid else None
+    if not payload or payload.get("stage") != "await_unit":
         await cb.answer()
         return
     if not await has_capability_async(uid, CAP_WALLET_MODERATE):
-        _WALLET_MANUAL_ADD_INTENT.pop(uid, None)
+        try:
+            if uid:
+                await clear_intent(f"INTENT:WADM:{uid}")
+        except Exception:
+            pass
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     unit = cb.data.split(":")[-1]
     if unit not in {"TMN", "IRR"}:
         await cb.answer("واحد نامعتبر", show_alert=True)
         return
-    state["unit"] = unit
-    state["stage"] = "await_amount"
+    await set_intent_json(f"INTENT:WADM:{uid}", {"stage": "await_amount", "user_id": payload.get("user_id"), "unit": unit, "ts": datetime.utcnow().isoformat()})
     await cb.message.answer("مبلغ را به صورت عدد ارسال کنید.")
     await cb.answer()
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _WALLET_MANUAL_ADD_INTENT and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("stage") == "await_amount" and isinstance(getattr(m, "text", None), str))
+@router.message(F.text.regexp(r"^\d+(?:[\.,]\d+)?$"))
 async def admin_wallet_manual_add_amount(message: Message) -> None:
     admin_id = message.from_user.id
-    state = _WALLET_MANUAL_ADD_INTENT.get(admin_id)
-    if not state or not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
-        _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
+    payload = await get_intent_json(f"INTENT:WADM:{admin_id}")
+    if not payload or not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
+        try:
+            await clear_intent(f"INTENT:WADM:{admin_id}")
+        except Exception:
+            pass
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     try:
@@ -103,10 +114,13 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
     except Exception:
         await message.answer("مبلغ نامعتبر است. یک عدد مثبت ارسال کنید یا لغو کنید.")
         return
-    unit = state.get("unit")
-    user_id = state.get("user_id")
+    unit = payload.get("unit")
+    user_id = payload.get("user_id")
     if unit not in {"TMN", "IRR"} or not user_id:
-        _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
+        try:
+            await clear_intent(f"INTENT:WADM:{admin_id}")
+        except Exception:
+            pass
         await message.answer("وضعیت نامعتبر. از ابتدا تلاش کنید.")
         return
     irr = val * Decimal('10') if unit == "TMN" else val
@@ -128,7 +142,10 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
         await message.bot.send_message(chat_id=target_tg, text=f"✅ شارژ دستی توسط ادمین: +{tmn_add:,} تومان\nموجودی جدید: {new_tmn:,} تومان")
     except Exception:
         pass
-    _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
+    try:
+        await clear_intent(f"INTENT:WADM:{admin_id}")
+    except Exception:
+        pass
     await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
 
 
@@ -140,7 +157,7 @@ async def admin_wallet_pending_topups(message: Message) -> None:
         return
     # Cancel any lingering manual-add intent to avoid cross-capture
     try:
-        _WALLET_MANUAL_ADD_INTENT.pop(message.from_user.id, None)
+        await clear_intent(f"INTENT:WADM:{message.from_user.id}")
     except Exception:
         pass
     async with session_scope() as session:
@@ -178,7 +195,7 @@ async def admin_wallet_pending_topups(message: Message) -> None:
 
 
 # In-memory intent storage (per-process)
-_TOPUP_INTENT: Dict[int, Decimal] = {}
+# _TOPUP_INTENT moved to DB-backed intents (see intent_store)
 # Admin intent for setting minimum top-up (awaiting amount input)
 _WALLET_ADMIN_MIN_INTENT: Dict[int, bool] = {}
 # Admin intent for setting maximum top-up (awaiting amount input)
@@ -250,7 +267,7 @@ async def wallet_menu(message: Message) -> None:
 @router.callback_query(F.data == "wallet:custom")
 async def cb_wallet_custom(cb: CallbackQuery) -> None:
     await cb.message.answer("مبلغ دلخواه را به تومان ارسال کنید (مثلاً 76000 برای ۷۶۰۰۰ تومان).")
-    _TOPUP_INTENT[cb.from_user.id] = Decimal("-1")
+    await set_intent_json(f"INTENT:TOPUP:{cb.from_user.id}", {"amount": "-1", "ts": datetime.utcnow().isoformat()})
     await cb.answer()
 
 
@@ -358,7 +375,8 @@ async def handle_wallet_custom_amount(message: Message) -> None:
             await admin_wallet_settings_menu(message)
             return
     # User top-up custom amount path (requires prior intent marker)
-    if uid not in _TOPUP_INTENT or _TOPUP_INTENT[uid] != Decimal("-1"):
+    payload = await get_intent_json(f"INTENT:TOPUP:{uid}")
+    if not payload or str(payload.get("amount")) != "-1":
         return
     try:
         toman = Decimal(message.text)
@@ -375,15 +393,15 @@ async def handle_wallet_custom_amount(message: Message) -> None:
         await message.answer(
             f"حداقل مبلغ شارژ {int(min_irr/Decimal('10')):,} تومان است. لطفاً مبلغ بیشتری وارد کنید."
         )
-        _TOPUP_INTENT[uid] = Decimal("-1")
+        await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": "-1", "ts": datetime.utcnow().isoformat()})
         return
     if max_irr is not None and rial > max_irr:
         await message.answer(
             f"حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است. لطفاً مبلغ کمتری وارد کنید."
         )
-        _TOPUP_INTENT[uid] = Decimal("-1")
+        await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": "-1", "ts": datetime.utcnow().isoformat()})
         return
-    _TOPUP_INTENT[uid] = rial
+    await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": str(int(rial)), "ts": datetime.utcnow().isoformat()})
     await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس رسید پرداخت را ارسال کنید.")
 
 
@@ -410,7 +428,7 @@ async def cb_wallet_amount(cb: CallbackQuery) -> None:
             f"حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است.", show_alert=True
         )
         return
-    _TOPUP_INTENT[cb.from_user.id] = amount
+    await set_intent_json(f"INTENT:TOPUP:{cb.from_user.id}", {"amount": str(int(amount)), "ts": datetime.utcnow().isoformat()})
     await cb.message.answer(
         f"مبلغ {int(amount/10):,} تومان انتخاب شد.\nلطفاً عکس رسید پرداخت را ارسال کنید (بدون نیاز به متن)."
     )
@@ -423,15 +441,38 @@ async def handle_wallet_photo(message: Message) -> None:
     if not message.from_user:
         return
     tg_id = message.from_user.id
-    if tg_id not in _TOPUP_INTENT:
+    payload = await get_intent_json(f"INTENT:TOPUP:{tg_id}")
+    if not payload:
         return
-    amount = _TOPUP_INTENT.pop(tg_id)
+    # TTL check (15 minutes)
+    try:
+        ts_s = str(payload.get("ts"))
+        from datetime import datetime as _dt
+        expired = (_dt.utcnow() - _dt.fromisoformat(ts_s)).total_seconds() > 900
+    except Exception:
+        expired = True
+    if expired:
+        await clear_intent(f"INTENT:TOPUP:{tg_id}")
+        await message.answer("درخواست شارژ منقضی شد. لطفاً از منوی کیف پول دوباره اقدام کنید.")
+        return
+    try:
+        amount = Decimal(str(payload.get("amount")))
+    except Exception:
+        await clear_intent(f"INTENT:TOPUP:{tg_id}")
+        return
+    # mimic pop behaviour: clear intent now so user must reselect on failures
+    await clear_intent(f"INTENT:TOPUP:{tg_id}")
     file_id = None
     is_photo = False
     if message.photo:
         file_id = message.photo[-1].file_id
         is_photo = True
     elif message.document:
+        mime = (message.document.mime_type or "").lower()
+        # Allow only images or PDF documents for receipts
+        if not (mime.startswith("image/") or mime == "application/pdf"):
+            await message.answer("فقط تصویر یا PDF مجاز است. لطفاً رسید را به‌صورت عکس یا PDF ارسال کنید.")
+            return
         file_id = message.document.file_id
     if not file_id:
         return
@@ -476,6 +517,15 @@ async def handle_wallet_photo(message: Message) -> None:
         await log_audit(session, actor="user", action="wallet_topup_created", target_type="wallet_topup", target_id=topup.id, meta=str({"amount": str(amount)}))
         await session.commit()
     await message.answer("درخواست شارژ ثبت شد و برای ادمین ارسال گردید.")
+    try:
+        import logging
+        from app.utils.correlation import get_correlation_id
+        logging.getLogger(__name__).info(
+            "wallet topup created",
+            extra={"extra": {"cid": get_correlation_id(), "topup_id": topup.id, "user_id": user.id, "amount_irr": str(amount), "mime": (message.document.mime_type if message.document else "photo")}},
+        )
+    except Exception:
+        pass
     # Forward to admins
     admin_ids = list(get_admin_ids())
     if admin_ids:
@@ -506,29 +556,36 @@ async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
-    _WALLET_REJECT_REASON_INTENT[cb.from_user.id] = topup_id
+    await set_intent_json(f"INTENT:WREJ:{cb.from_user.id}", {"topup_id": topup_id, "ts": datetime.utcnow().isoformat()})
     orig_caption = getattr(cb.message, "caption", None)
     orig_text = getattr(cb.message, "text", None)
     content = orig_caption if orig_caption is not None else (orig_text or "")
     kind = "caption" if orig_caption is not None else "text"
-    _WALLET_REJECT_REASON_CTX[cb.from_user.id] = (cb.message.chat.id, cb.message.message_id, content, kind)
+    await set_intent_json(
+        f"INTENT:WREJCTX:{cb.from_user.id}",
+        {"chat_id": cb.message.chat.id, "message_id": cb.message.message_id, "content": content or "", "kind": kind, "ts": datetime.utcnow().isoformat()},
+    )
     await cb.message.answer("لطفاً دلیل رد درخواست را ارسال کنید (یک پیام متنی).")
     await cb.answer()
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and isinstance(getattr(m, "text", None), str) and m.from_user.id in _WALLET_REJECT_REASON_INTENT)
+@router.message(F.text)
 async def admin_wallet_reject_with_reason_text(message: Message) -> None:
     admin_id = message.from_user.id if message.from_user else None
     if not admin_id or not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
-        _WALLET_REJECT_REASON_INTENT.pop(admin_id, None)
-        _WALLET_REJECT_REASON_CTX.pop(admin_id, None)
+        try:
+            await clear_intent(f"INTENT:WREJ:{admin_id}")
+            await clear_intent(f"INTENT:WREJCTX:{admin_id}")
+        except Exception:
+            pass
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     reason = message.text.strip()
-    topup_id = _WALLET_REJECT_REASON_INTENT.pop(admin_id, None)
-    ctx = _WALLET_REJECT_REASON_CTX.pop(admin_id, None)
-    if not topup_id:
+    payload = await get_intent_json(f"INTENT:WREJ:{admin_id}")
+    ctx = await get_intent_json(f"INTENT:WREJCTX:{admin_id}")
+    if not payload:
         return
+    topup_id = int(payload.get("topup_id"))
     user_telegram_id = None
     async with session_scope() as session:
         row = await session.execute(select(WalletTopUp, User).join(User, WalletTopUp.user_id == User.id).where(WalletTopUp.id == topup_id))
@@ -568,6 +625,11 @@ async def admin_wallet_reject_with_reason_text(message: Message) -> None:
                 await message.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=new_content)
         except Exception:
             pass
+    try:
+        await clear_intent(f"INTENT:WREJ:{admin_id}")
+        await clear_intent(f"INTENT:WREJCTX:{admin_id}")
+    except Exception:
+        pass
     await message.answer("رد شد و دلیل به کاربر اطلاع داده شد.")
 
 

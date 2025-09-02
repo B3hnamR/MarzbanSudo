@@ -140,3 +140,14 @@ async def run_scheduler() -> None:
     await sched.spawn(periodic(job_autocancel_orders, 60 * 60))      # every 1h
 
     logger.info("scheduler started")
+    # Keep the scheduler running; on cancellation try to close bot singleton (notifications)
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    except asyncio.CancelledError:
+        try:
+            from app.services.notifications import aclose_bot
+            await aclose_bot()
+        except Exception:
+            pass
+        raise

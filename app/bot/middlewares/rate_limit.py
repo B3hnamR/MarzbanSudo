@@ -42,6 +42,9 @@ class RateLimitMiddleware(BaseMiddleware):
             q = self.history[uid]
             while q and (now - q[0]) > self.window:
                 q.popleft()
+            # Bound queue length defensively to avoid growth on edge cases
+            while len(q) > self.max:
+                q.popleft()
             if len(q) >= self.max:
                 try:
                     await event.answer(self.notify_text)
@@ -55,6 +58,9 @@ class RateLimitMiddleware(BaseMiddleware):
             now = time.monotonic()
             q = self.history[uid]
             while q and (now - q[0]) > self.window:
+                q.popleft()
+            # Bound queue length defensively
+            while len(q) > self.max:
                 q.popleft()
             if len(q) >= self.max:
                 try:

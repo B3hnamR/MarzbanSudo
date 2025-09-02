@@ -350,7 +350,7 @@ async def cb_plan_mode_ext(cb: CallbackQuery) -> None:
             return
         services = (await session.execute(select(UserService).where(UserService.user_id == urow.id).order_by(UserService.created_at.desc()))).scalars().all()
     if not services:
-        await cb.message.answer("هیچ سرویسی برای تمدید یافت نشد. ل��فاً 'اکانت جدید' را انتخاب کنید.")
+        await cb.message.answer("هیچ سرویسی برای تمدید یافت نشد. لطفاً 'اکانت جدید' را انتخاب کنید.")
         await cb.answer()
         return
     lines = ["🔁 انتخاب سرویس برای تمدید:"]
@@ -403,7 +403,7 @@ async def cb_plan_confirm(cb: CallbackQuery) -> None:
         try:
             member = await cb.message.bot.get_chat_member(chat_id=channel, user_id=cb.from_user.id)
             if getattr(member, "status", None) not in {"member", "creator", "administrator"}:
-                await cb.answer("ابتدا در کا��ال عضو شوید.", show_alert=True)
+                await cb.answer("ابتدا در کانال عضو شوید.", show_alert=True)
                 return
         except Exception:
             pass
@@ -597,7 +597,7 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
             order.paid_at = order.updated_at = order.provisioned_at = datetime.utcnow()
             await session.commit()
         except Exception:
-            await cb.message.answer("خطا در فعال‌سازی ��لن. لطفاً مجدداً تلاش کنید یا به ادمین اطلاع دهید.")
+            await cb.message.answer("خطا در فعال‌سازی پلن. لطفاً مجدداً تلاش کنید یا به ادمین اطلاع دهید.")
             await cb.answer()
             return
         # Notify

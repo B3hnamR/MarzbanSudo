@@ -258,6 +258,10 @@ async def handle_attach_media(message: Message) -> None:
         file_id = message.photo[-1].file_id
         is_photo = True
     elif message.document:
+        mime = (message.document.mime_type or "").lower()
+        if not (mime.startswith("image/") or mime == "application/pdf"):
+            await message.answer("فقط تصویر یا PDF مجاز است. لطفاً رسید را به‌صورت عکس یا PDF ارسال کنید.")
+            return
         file_id = message.document.file_id
     if not file_id:
         await message.answer("فقط عکس یا فایل را ارسال کنید.")
@@ -293,7 +297,17 @@ async def handle_attach_media(message: Message) -> None:
             meta=str({"file_id": file_id, "note": note}),
         )
         await session.commit()
+        try:
+            import logging
+            from app.utils.correlation import get_correlation_id
+            logging.getLogger(__name__).info(
+                "order receipt attached",
+                extra={"extra": {"cid": get_correlation_id(), "order_id": order.id, "user_id": user.id, "mime": (message.document.mime_type if message.document else "photo")}},
+            )
+        except Exception:
+            pass
         await message.answer("رسید ثبت شد و در صف بررسی ادمین قرار گرفت.")
+        # Optionally: inform logs channel in future via notify_log
         # ارسال برای ادمین‌ها با دکمه‌های Approve/Reject
         admin_raw = os.getenv("TELEGRAM_ADMIN_IDS", "")
         admin_ids = [int(x.strip()) for x in admin_raw.split(",") if x.strip().isdigit()]

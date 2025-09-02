@@ -11,14 +11,17 @@ from sqlalchemy import select, update
 from decimal import Decimal
 
 from app.db.session import session_scope
-from app.db.models import Order, User, Plan
+from app.db.models import Order, User, Plan, UserService
 from app.services import marzban_ops as ops
 from app.services.audit import log_audit
 from app.utils.username import tg_username
 from app.services.security import has_capability_async, CAP_ORDERS_MODERATE
 from app.marzban.client import get_client
+from app.utils.correlation import get_correlation_id
 
 router = Router()
+import logging
+logger = logging.getLogger(__name__)
 
 PAGE_SIZE_RECENT = 10
 
@@ -190,18 +193,33 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
             await cb.answer("Already processed", show_alert=True)
             return
         await log_audit(session, actor="admin", action="order_paid", target_type="order", target_id=order.id, meta=str({"by": cb.from_user.id}))
+        # Log paid mark
+        logger.info("order marked paid", extra={"extra": {"cid": get_correlation_id(), "order_id": order_id, "admin_id": cb.from_user.id}})
         # Provision in Marzban (UI-safe)
         username = user.marzban_username or tg_username(user.telegram_id)
         try:
             info = await ops.provision_for_plan(username, plan)
         except Exception:
+            logger.exception("provision failed", extra={"extra": {"cid": get_correlation_id(), "order_id": order_id, "user_id": user.id, "username": username}})
             await cb.answer("Provision failed", show_alert=True)
             return
-        # Persist token if available
+        # Persist token and link to UserService (multi-service)
         sub_url = info.get("subscription_url", "") if isinstance(info, dict) else ""
         token = _token_from_subscription_url(sub_url)
+        # Upsert UserService for this user/username
+        usvc = await session.scalar(
+            select(UserService).where(UserService.user_id == user.id, UserService.username == username)
+        )
+        if not usvc:
+            usvc = UserService(user_id=user.id, username=username, status="active")
+            session.add(usvc)
+            await session.flush()
         if token:
+            usvc.last_token = token
+            # keep backward-compat for existing flows
             user.subscription_token = token
+        # Attach order to the service
+        order.user_service_id = usvc.id
         # Mark provisioned if still paid
         await session.execute(
             update(Order)
@@ -209,8 +227,10 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
             .values(status="provisioned", provisioned_at=datetime.utcnow())
             .execution_options(synchronize_session=False)
         )
-        await log_audit(session, actor="system", action="order_provisioned", target_type="order", target_id=order.id, meta=str({"user": user.id, "plan": plan.id}))
+        await log_audit(session, actor="system", action="order_provisioned", target_type="order", target_id=order.id, meta=str({"user": user.id, "plan": plan.id, "user_service_id": usvc.id}))
         await session.commit()
+        logger.info("order provisioned", extra={"extra": {"cid": get_correlation_id(), "order_id": order_id, "user_id": user.id, "username": username, "user_service_id": usvc.id, "token": bool(token)}})
+        svc_id = usvc.id
     # Notify user with full delivery: summary, direct configs, QR, manage buttons
     try:
         sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
@@ -230,7 +250,7 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
         sub_url = ""
         try:
             client = await get_client()
-            info = await client.get_user(user.marzban_username or tg_username(user.telegram_id))
+            info = await client.get_user(username)
             links = info.get("links") or []
             sub_url = info.get("subscription_url") or ""
         except Exception:
@@ -241,8 +261,8 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
                 await client.aclose()  # type: ignore
             except Exception:
                 pass
-        # Inline manage keyboard
-        manage_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 مدیریت اکانت", callback_data="acct:refresh"), InlineKeyboardButton(text="📋 کپی همه", callback_data="acct:copyall")]])
+        # Inline manage keyboard (service-specific)
+        manage_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 مدیریت سرویس", callback_data=f"acct:svc:{svc_id}"), InlineKeyboardButton(text="📋 کپی همه", callback_data=f"acct:copyall:svc:{svc_id}")]])
         # Send text configs in chunks
         if links:
             chunk = []
@@ -312,6 +332,7 @@ async def cb_reject_order(cb: CallbackQuery) -> None:
             return
         await log_audit(session, actor="admin", action="order_rejected", target_type="order", target_id=order_id, meta=str({"by": cb.from_user.id}))
         await session.commit()
+        logger.info("order rejected", extra={"extra": {"cid": get_correlation_id(), "order_id": order_id, "admin_id": cb.from_user.id}})
     try:
         if getattr(cb.message, "caption", None):
             cap = cb.message.caption or "درخواست"

@@ -21,6 +21,7 @@ from app.bot.handlers import wallet as wallet_handlers
 from app.bot.handlers import admin_users as admin_users_handlers
 from app.bot.middlewares.rate_limit import RateLimitMiddleware
 from app.bot.middlewares.ban_gate import BanGateMiddleware
+from app.bot.middlewares.correlation import CorrelationMiddleware
 
 try:
     # Optional: load .env in non-production environments
@@ -75,6 +76,11 @@ async def main() -> None:
     dp.message.middleware(BanGateMiddleware())
     dp.callback_query.middleware(BanGateMiddleware())
 
+    # Correlation id middleware for observability
+    corr = CorrelationMiddleware()
+    dp.message.middleware(corr)
+    dp.callback_query.middleware(corr)
+
     rate_limiter = RateLimitMiddleware(max_per_minute=max_per_min)
     dp.message.middleware(rate_limiter)
     dp.callback_query.middleware(rate_limiter)
@@ -99,6 +105,12 @@ async def main() -> None:
     try:
         await dp.start_polling(bot)
     finally:
+        # Close bot session(s)
+        try:
+            from app.services.notifications import aclose_bot
+            await aclose_bot()
+        except Exception:
+            pass
         await bot.session.close()
 
 

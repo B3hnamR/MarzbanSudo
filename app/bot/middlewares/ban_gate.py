@@ -91,7 +91,7 @@ class BanGateMiddleware(BaseMiddleware):
                             pass
                 except Exception:
                     pass
-                await event.answer("در��واست شما ثبت شد و در دست بررسی است.")
+                await event.answer("درخواست شما ثبت شد و در دست بررسی است.")
                 return None
             else:
                 # ignore non-message when capturing
@@ -144,7 +144,7 @@ class BanGateMiddleware(BaseMiddleware):
             # accepted but still banned? Show generic error
             try:
                 if isinstance(event, Message):
-                    await event.answer("حساب شما در وضعیت نامعتبر است. ل��فاً بعداً تلاش کنید.")
+                    await event.answer("حساب شما در وضعیت نامعتبر است. لطفاً بعداً تلاش کنید.")
                 else:
                     await event.answer("blocked")
             except Exception:
