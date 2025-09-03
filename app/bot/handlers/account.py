@@ -65,7 +65,22 @@ async def _render_account_text(tg_id: int) -> Tuple[str, str | None, List[str]]:
     async with session_scope() as session:
         user = await session.scalar(select(User).where(User.telegram_id == tg_id))
         if user:
-            reg_date_txt = user.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC"
+            # Format date Jalali if possible
+            try:
+                if jdatetime:
+                    import pytz  # type: ignore
+                    tehran = pytz.timezone('Asia/Tehran')
+                    dt = user.created_at
+                    if dt.tzinfo is None:
+                        import datetime as _dt
+                        dt = dt.replace(tzinfo=_dt.timezone.utc)
+                    dt_local = dt.astimezone(tehran)
+                    jd = jdatetime.datetime.fromgregorian(datetime=dt_local)
+                    reg_date_txt = jd.strftime('%Y/%m/%d %H:%M') + " 🇮🇷"
+                else:
+                    reg_date_txt = user.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC"
+            except Exception:
+                reg_date_txt = user.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC"
             res = await session.execute(select(func.count(Order.id)).where(Order.user_id == user.id))
             orders_count = int(res.scalar() or 0)
             if getattr(user, "marzban_username", None):
@@ -148,7 +163,21 @@ async def handle_account(message: Message) -> None:
                 async with session_scope() as session:
                     user = await session.scalar(select(User).where(User.telegram_id == tg_id))
                     if user:
-                        reg_date_txt = user.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC"
+                        try:
+                            if jdatetime:
+                                import pytz  # type: ignore
+                                tehran = pytz.timezone('Asia/Tehran')
+                                dt = user.created_at
+                                if dt.tzinfo is None:
+                                    import datetime as _dt
+                                    dt = dt.replace(tzinfo=_dt.timezone.utc)
+                                dt_local = dt.astimezone(tehran)
+                                jd = jdatetime.datetime.fromgregorian(datetime=dt_local)
+                                reg_date_txt = jd.strftime('%Y/%m/%d %H:%M') + " 🇮🇷"
+                            else:
+                                reg_date_txt = user.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC"
+                        except Exception:
+                            reg_date_txt = user.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC"
                         res = await session.execute(select(func.count(Order.id)).where(Order.user_id == user.id))
                         orders_count = int(res.scalar() or 0)
                         if getattr(user, "marzban_username", None):

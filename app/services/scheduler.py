@@ -101,7 +101,7 @@ async def job_cleanup_receipts() -> None:
     Currently receipts are Telegram File IDs; no local cleanup is required. This job reports a summary only.
     """
     days = settings.receipt_retention_days
-    await notify_log(f"Cleanup receipts tick (retention={days} days). Receipts are Telegram File IDs; skipping disk cleanup.")
+    logger.debug("cleanup_receipts: retention=%s days; telegram file-id only, skipping disk cleanup", days)
 
 
 async def job_autocancel_orders() -> None:
