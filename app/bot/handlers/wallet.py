@@ -47,7 +47,23 @@ async def admin_wallet_manual_add_start(message: Message) -> None:
         await message.answer("شما دسترسی ادم��ن ندارید.")
         return
     admin_id = message.from_user.id
-    logger.debug("wallet.admin_manual_add_start", extra={"extra": {"uid": admin_id}})
+    logger.info("wallet.admin_manual_add_start", extra={"extra": {"uid": admin_id}})
+    # Best-effort: cancel any lingering admin user/manage intents to avoid cross-capture of numeric inputs
+    try:
+        from app.bot.handlers import admin_users as _au
+        _au._USER_INTENTS.pop(admin_id, None)
+        _au._SVC_INTENTS.pop(admin_id, None)
+        _au._SEARCH_INTENT.pop(admin_id, None)
+    except Exception:
+        pass
+    try:
+        from app.bot.handlers import admin_manage as _am
+        _am._APLANS_CREATE_INTENT.pop(admin_id, None)
+        _am._APLANS_FIELD_INTENT.pop(admin_id, None)
+        _am._APLANS_PRICE_INTENT.pop(admin_id, None)
+    except Exception:
+        pass
+    logger.info("wallet.admin_manual_add_start.cleanup", extra={"extra": {"uid": admin_id}})
     # Set in-memory flag to enable admin manual-add capture handlers
     _WALLET_MANUAL_ADD_INTENT[admin_id] = {"active": True}
     await set_intent_json(f"INTENT:WADM:{admin_id}", {"stage": "await_ref", "user_id": None, "unit": None, "ts": datetime.utcnow().isoformat()})
@@ -74,8 +90,10 @@ async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
 @router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and isinstance(getattr(m, "text", None), str) and __import__("re").fullmatch(r"^(?:\d{5,}|[a-z0-9_]{3,})$", (m.text or "").strip().lower().lstrip("@")) is not None)
 async def admin_wallet_manual_add_ref(message: Message) -> None:
     admin_id = message.from_user.id
+    logger.info("wallet.admin_manual_add_ref", extra={"extra": {"uid": admin_id, "text": (message.text or "")}})
     # Only handle when admin has an active manual-add intent at 'await_ref' stage
     payload = await get_intent_json(f"INTENT:WADM:{admin_id}")
+    logger.info("wallet.admin_manual_add_ref.stage", extra={"extra": {"uid": admin_id, "stage": (payload or {}).get("stage")}})
     if not payload or payload.get("stage") != "await_ref":
         return
     if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
@@ -104,6 +122,7 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
 @router.callback_query(F.data.startswith("walletadm:add:unit:"))
 async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
     uid = cb.from_user.id if cb.from_user else None
+    logger.info("wallet.admin_manual_add_unit.enter", extra={"extra": {"uid": uid, "data": cb.data}})
     payload = await get_intent_json(f"INTENT:WADM:{uid}") if uid else None
     if not payload or payload.get("stage") != "await_unit":
         await cb.answer()
@@ -117,6 +136,7 @@ async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     unit = cb.data.split(":")[-1]
+    logger.info("wallet.admin_manual_add_unit.choice", extra={"extra": {"uid": uid, "unit": unit}})
     if unit not in {"TMN", "IRR"}:
         await cb.answer("واحد نامعتبر", show_alert=True)
         return
@@ -128,7 +148,9 @@ async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
 @router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and isinstance(getattr(m, "text", None), str) and __import__("re").fullmatch(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]*$", m.text or "") is not None)
 async def admin_wallet_manual_add_amount(message: Message) -> None:
     admin_id = message.from_user.id
+    logger.info("wallet.admin_manual_add_amount.enter", extra={"extra": {"uid": admin_id, "text": (message.text or "")}})
     payload = await get_intent_json(f"INTENT:WADM:{admin_id}")
+    logger.info("wallet.admin_manual_add_amount.stage", extra={"extra": {"uid": admin_id, "stage": (payload or {}).get("stage"), "unit": (payload or {}).get("unit"), "user_id": (payload or {}).get("user_id")}})
     if not payload or not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
         try:
             await clear_intent(f"INTENT:WADM:{admin_id}")
@@ -184,9 +206,11 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
 @router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and isinstance(getattr(m, "text", None), str) and __import__("re").search(r"\d", m.text or "") is not None)
 async def admin_wallet_manual_add_amount_fallback(message: Message) -> None:
     admin_id = message.from_user.id if message.from_user else None
+    logger.info("wallet.admin_manual_add_amount_fallback.enter", extra={"extra": {"uid": admin_id, "text": (message.text or "")}})
     if not admin_id:
         return
     payload = await get_intent_json(f"INTENT:WADM:{admin_id}")
+    logger.info("wallet.admin_manual_add_amount_fallback.stage", extra={"extra": {"uid": admin_id, "stage": (payload or {}).get("stage"), "unit": (payload or {}).get("unit"), "user_id": (payload or {}).get("user_id")}})
     if not payload or payload.get("stage") != "await_amount":
         return
     if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
@@ -507,7 +531,7 @@ async def handle_wallet_custom_amount_fallback(message: Message) -> None:
         return
     uid = message.from_user.id
     payload = await get_intent_json(f"INTENT:TOPUP:{uid}")
-    logger.debug("wallet.custom_amount_fallback", extra={"extra": {"uid": uid, "has_intent": bool(payload), "text": (message.text or "")[:48]}})
+    logger.info("wallet.custom_amount_fallback", extra={"extra": {"uid": uid, "has_intent": bool(payload), "text": (message.text or "")[:48]}})
     if not payload or str(payload.get("amount")) != "-1":
         return
     raw = _normalize_amount(message.text)
@@ -882,9 +906,9 @@ def _admin_wallet_keyboard(min_irr: Decimal, max_irr: Decimal | None) -> InlineK
 
 @router.message(F.text == "💼 تنظیمات کیف پول")
 async def admin_wallet_settings_menu(message: Message) -> None:
-    logger.debug("wallet.admin_settings_menu: enter", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
+    logger.info("wallet.admin_settings_menu: enter", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
-        logger.debug("wallet.admin_settings_menu: no_capability", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
+        logger.info("wallet.admin_settings_menu: no_capability", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     # Best-effort: cancel any lingering plan management intents to avoid cross-capture of inputs
