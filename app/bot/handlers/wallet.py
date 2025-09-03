@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Tuple
@@ -75,13 +76,17 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
         _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
         await message.answer("شما دسترسی ادمین ندارید.")
         return
-    ref = message.text.strip()
+    ref = (message.text or "").strip()
+    norm = ref.strip().lower().lstrip("@")
+    # Only accept valid refs: numeric tg_id or username-like [a-z0-9_]{3,}
+    if not (norm.isdigit() or re.fullmatch(r"[a-z0-9_]{3,}", norm or "")):
+        return
     async with session_scope() as session:
         user = None
-        if ref.isdigit():
-            user = await session.scalar(select(User).where(User.telegram_id == int(ref)))
+        if norm.isdigit():
+            user = await session.scalar(select(User).where(User.telegram_id == int(norm)))
         else:
-            user = await session.scalar(select(User).where(User.marzban_username == ref))
+            user = await session.scalar(select(User).where(User.marzban_username == norm))
         if not user:
             await message.answer("کاربر یافت نشد. مجدد شناسه صحیح را ارسال کنید یا لغو کنید.")
             return
@@ -166,6 +171,57 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
         await clear_intent(f"INTENT:WADM:{admin_id}")
     except Exception:
         pass
+    await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
+
+# Fallback: capture arbitrary text for admin amount stage
+@router.message(F.text)
+async def admin_wallet_manual_add_amount_fallback(message: Message) -> None:
+    admin_id = message.from_user.id if message.from_user else None
+    if not admin_id:
+        return
+    payload = await get_intent_json(f"INTENT:WADM:{admin_id}")
+    if not payload or payload.get("stage") != "await_amount":
+        return
+    if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
+        await clear_intent(f"INTENT:WADM:{admin_id}")
+        return
+    raw = _normalize_amount(message.text or "")
+    m = re.search(r"(\d+(?:\.\d+)?)", raw)
+    if not m:
+        await message.answer("مبلغ نامعتبر است. یک عدد مثبت ارسال کنید یا لغو کنید.")
+        return
+    try:
+        val = Decimal(m.group(1))
+        if val <= 0:
+            raise ValueError
+    except Exception:
+        await message.answer("مبلغ نامعتبر است. یک عدد مثبت ارسال کنید یا لغو کنید.")
+        return
+    unit = payload.get("unit")
+    user_id = payload.get("user_id")
+    if unit not in {"TMN", "IRR"} or not user_id:
+        await clear_intent(f"INTENT:WADM:{admin_id}")
+        await message.answer("وضعیت نامعتبر. از ابتدا تلاش کنید.")
+        return
+    irr = val * Decimal('10') if unit == "TMN" else val
+    tmn_add = int((irr/Decimal('10')).to_integral_value())
+    async with session_scope() as session:
+        user = await session.scalar(select(User).where(User.id == int(user_id)))
+        if not user:
+            await clear_intent(f"INTENT:WADM:{admin_id}")
+            await message.answer("کاربر یافت نشد.")
+            return
+        user.balance = (Decimal(user.balance or 0) + irr)
+        await log_audit(session, actor="admin", action="wallet_manual_add", target_type="user", target_id=user.id, meta=str({"amount": str(irr)}))
+        await session.commit()
+        new_tmn = int((Decimal(user.balance or 0)/Decimal('10')).to_integral_value())
+        target_tg = user.telegram_id
+        target_username = user.marzban_username
+    try:
+        await message.bot.send_message(chat_id=target_tg, text=f"✅ شارژ دستی توسط ادمین: +{tmn_add:,} تومان\nموجودی جدید: {new_tmn:,} تومان")
+    except Exception:
+        pass
+    await clear_intent(f"INTENT:WADM:{admin_id}")
     await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
 
 
@@ -426,6 +482,36 @@ async def handle_wallet_custom_amount(message: Message) -> None:
     await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": str(int(rial)), "ts": datetime.utcnow().isoformat()})
     await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس رسید پرداخت را ارسال کنید.")
 
+
+# Fallback: if user sends arbitrary text while TOPUP intent is active, try to parse amount
+@router.message(F.text)
+async def handle_wallet_custom_amount_fallback(message: Message) -> None:
+    if not message.from_user or not isinstance(getattr(message, "text", None), str):
+        return
+    uid = message.from_user.id
+    payload = await get_intent_json(f"INTENT:TOPUP:{uid}")
+    if not payload or str(payload.get("amount")) != "-1":
+        return
+    raw = _normalize_amount(message.text)
+    # Extract leading digits (and optional decimal) from arbitrary text
+    m = re.search(r"(\d+(?:\.\d+)?)", raw)
+    if not m:
+        return
+    try:
+        toman = Decimal(m.group(1))
+        if toman <= 0:
+            raise ValueError
+    except Exception:
+        return
+    rial = toman * Decimal("10")
+    async with session_scope() as session:
+        min_irr = await _get_min_topup(session)
+        max_irr = await _get_max_topup(session)
+    if rial < min_irr or (max_irr is not None and rial > max_irr):
+        await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": "-1", "ts": datetime.utcnow().isoformat()})
+        return
+    await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": str(int(rial)), "ts": datetime.utcnow().isoformat()})
+    await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس رسید پرداخت را ارسال کنید.")
 
 @router.callback_query(F.data.startswith("wallet:amt:"))
 async def cb_wallet_amount(cb: CallbackQuery) -> None:
