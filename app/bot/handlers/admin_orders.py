@@ -50,7 +50,7 @@ def _amount_label(amount, currency: str | None) -> str:
 @router.message(F.text == "📦 سفارش‌های اخیر")
 async def admin_orders_recent(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_ORDERS_MODERATE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     page = 1
     await _send_recent_orders_page(message, page)
@@ -59,7 +59,7 @@ async def admin_orders_recent(message: Message) -> None:
 @router.callback_query(F.data.startswith("admin:orders:page:"))
 async def cb_admin_orders_page(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_ORDERS_MODERATE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         page = int(cb.data.split(":")[3])
@@ -121,7 +121,7 @@ def _token_from_subscription_url(url: Optional[str]) -> Optional[str]:
 @router.message(Command("admin_orders_pending"))
 async def admin_orders_pending(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_ORDERS_MODERATE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     async with session_scope() as session:
         stmt = (
@@ -161,7 +161,7 @@ async def admin_orders_pending(message: Message) -> None:
 @router.callback_query(F.data.startswith("ord:approve:"))
 async def cb_approve_order(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_ORDERS_MODERATE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         order_id = int(cb.data.split(":")[2]) if cb.data else 0
@@ -312,7 +312,7 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("ord:reject:"))
 async def cb_reject_order(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_ORDERS_MODERATE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         order_id = int(cb.data.split(":")[2]) if cb.data else 0

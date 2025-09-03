@@ -63,7 +63,7 @@ async def _send_plans_page(message: Message, page: int) -> None:
     async with session_scope() as session:
         all_plans = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
         if not all_plans:
-            await message.answer("هیچ پلنی موجود نیست.")
+            await message.answer("ℹ️ هیچ پلنی موجود نیست.")
             return
         total = len(all_plans)
         pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
@@ -97,13 +97,13 @@ async def handle_plans(message: Message) -> None:
         async with session_scope() as session:
             rows = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
             if not rows:
-                await message.answer("هیچ پلن فعالی در دسترس نیست.")
+                await message.answer("ℹ️ هیچ پلن فعالی در دسترس نیست.")
                 return
             # send paginated list (page 1)
         await _send_plans_page(message, 1)
     except Exception as e:
         logging.exception("Failed to fetch plans from DB: %s", e)
-        await message.answer("خطا در دریافت پلن‌ها از سیستم. لطفاً کمی بعد تلاش کنید.")
+        await message.answer("⚠️ خطا در دریافت پلن‌ها از سیستم. لطفاً کمی بعد تلاش کنید.")
 
 
 @router.callback_query(F.data.startswith("plan:page:"))
@@ -193,7 +193,7 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
                 verified = bool(row_v and str(row_v.value).strip())
                 if not verified:
                     rk = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="📱 ارسال شماره من", request_contact=True)]], resize_keyboard=True, one_time_keyboard=True)
-                    await cb.message.answer("برای ادامه خرید، لطفاً شماره تلگرام خود را ارسال کنید.", reply_markup=rk)
+                    await cb.message.answer("📱 برای ادامه خرید، لطفاً شماره تلگرام خود را ارسال کنید.", reply_markup=rk)
                     await cb.answer()
                     return
     except Exception:
@@ -319,7 +319,7 @@ async def msg_plan_uname_custom(message: Message) -> None:
             return
         plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
     if not plan:
-        await message.answer("پلن یافت نشد.")
+        await message.answer("⚠️ پلن یافت نشد.")
         return
     _PURCHASE_SELECTION[user_id] = (tpl_id, uname)
     # Use a fake cb wrapper for uniform rendering
@@ -350,7 +350,7 @@ async def cb_plan_mode_new(cb: CallbackQuery, tpl_id: int | None = None) -> None
          [InlineKeyboardButton(text="ساخت یوزرنیم رندوم", callback_data=f"plan:uname:rnd:{t}")],
         [InlineKeyboardButton(text="یوزرنیم دلخواه ✏️", callback_data=f"plan:uname:cst:{t}")],
     ])
-    await cb.message.answer("لطفاً روش انتخاب یوزرنیم را انتخاب کنید:", reply_markup=kb)
+    await cb.message.answer("🧩 لطفاً روش انتخاب یوزرنیم را انتخاب کنید:", reply_markup=kb)
     await cb.answer()
 
 
@@ -380,7 +380,7 @@ async def cb_plan_mode_ext(cb: CallbackQuery) -> None:
             await session.commit()
         services = (await session.execute(select(UserService).where(UserService.user_id == urow.id).order_by(UserService.created_at.desc()))).scalars().all()
     if not services:
-        await cb.message.answer("هیچ سرویسی برای تمدید یافت نشد. لطفاً 'اکانت جدید' را انتخاب کنید.")
+        await cb.message.answer("ℹ️ هیچ سرویسی برای تمدید یافت نشد. لطفاً 'اکانت جدید' را انتخاب کنید.")
         await cb.answer()
         return
     lines = ["🔁 انتخاب سرویس برای تمدید:"]
@@ -592,7 +592,7 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
                 sid = _PURCHASE_EXT_SERVICE.get(cb.from_user.id)
                 usvc = await session.scalar(select(UserService).where(UserService.id == sid, UserService.user_id == db_user.id))
                 if not usvc:
-                    await cb.message.answer("سرویس انتخابی یافت نشد.")
+                    await cb.message.answer("⚠️ سرویس انتخابی یافت نشد.")
                     await cb.answer()
                     return
                 info = await ops.provision_for_plan(usvc.username, plan)
@@ -627,7 +627,7 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
             order.paid_at = order.updated_at = order.provisioned_at = datetime.utcnow()
             await session.commit()
         except Exception:
-            await cb.message.answer("خطا در فعال‌سازی پلن. لطفاً مجدداً تلاش کنید یا به ادمین اطلاع دهید.")
+            await cb.message.answer("❌ خطا در فعال‌سازی پلن. لطفاً مجدداً تلاش کنید یا به ادمین اطلاع دهید.")
             await cb.answer()
             return
         # Notify
@@ -692,7 +692,7 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
                     await cb.message.answer((header if first else "") + "\n\n".join(chunk), reply_markup=manage_kb, parse_mode="HTML")
         else:
             # If no direct configs, still show manage button for user to fetch
-            await cb.message.answer("برای مدیریت و دریافت کانفیگ‌ها از دکمه زیر استفاده کنید.", reply_markup=manage_kb)
+            await cb.message.answer("ℹ️ برای مدیریت و دریافت کانفیگ‌ها از دکمه زیر استفاده کنید.", reply_markup=manage_kb)
         # Send QR for subscription
         disp_url = ""
         if sub_domain and token2:
