@@ -29,6 +29,10 @@ def _to_bytes(limit: Any) -> int:
 
 
 async def sync_templates_to_plans(session: AsyncSession) -> int:
+    # If sync is disabled by env, do nothing
+    import os
+    if os.getenv("SYNC_TEMPLATES_DISABLED", "0").strip() in {"1", "true", "True"}:
+        return 0
     client = await get_client()
     created_or_updated = 0
     try:
@@ -59,10 +63,12 @@ async def sync_templates_to_plans(session: AsyncSession) -> int:
                 session.add(p)
                 created_or_updated += 1
             else:
+                # Update fields but DO NOT re-activate if user deactivated plan manually
                 existing.title = str(name)
                 existing.duration_days = duration_days if duration_days > 0 else 0
                 existing.data_limit_bytes = data_limit
-                existing.is_active = True
+                if existing.is_active is None:
+                    existing.is_active = True
                 existing.updated_at = now
                 created_or_updated += 1
         await session.commit()

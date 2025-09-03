@@ -110,7 +110,7 @@ class BanGateMiddleware(BaseMiddleware):
             try:
                 if isinstance(event, Message):
                     await event.answer(
-                        "حساب شما در ربات بن شده است. اگر فکر می‌کنید اشتباهی رخ داده، می‌توانید یک‌بار درخواست رفع بن ارسال کنید.",
+                        "حساب شما در ربات بن شده است. اگر ��کر می‌کنید اشتباهی رخ داده، می‌توانید یک‌بار درخواست رفع بن ارسال کنید.",
                         reply_markup=_appeal_intro_kb()
                     )
                 elif isinstance(event, CallbackQuery):
@@ -119,6 +119,11 @@ class BanGateMiddleware(BaseMiddleware):
                         reply_markup=_appeal_intro_kb()
                     )
                     await event.answer("blocked")
+                # Remove reply keyboard for banned users to avoid visible menu
+                try:
+                    await event.bot.send_message(chat_id=tg_id, text="🚫 دسترسی شما محدود است.", reply_markup={"remove_keyboard": True})
+                except Exception:
+                    pass
             except Exception:
                 pass
             return None

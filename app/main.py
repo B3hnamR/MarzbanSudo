@@ -22,6 +22,7 @@ from app.bot.handlers import admin_users as admin_users_handlers
 from app.bot.middlewares.rate_limit import RateLimitMiddleware
 from app.bot.middlewares.ban_gate import BanGateMiddleware
 from app.bot.middlewares.correlation import CorrelationMiddleware
+from app.bot.middlewares.channel_gate import ChannelGateMiddleware
 
 try:
     # Optional: load .env in non-production environments
@@ -80,6 +81,11 @@ async def main() -> None:
     corr = CorrelationMiddleware()
     dp.message.middleware(corr)
     dp.callback_query.middleware(corr)
+
+    # Channel gate middleware (enforce REQUIRED_CHANNEL on every update)
+    ch_gate = ChannelGateMiddleware()
+    dp.message.middleware(ch_gate)
+    dp.callback_query.middleware(ch_gate)
 
     rate_limiter = RateLimitMiddleware(max_per_minute=max_per_min)
     dp.message.middleware(rate_limiter)
