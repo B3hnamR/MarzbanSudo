@@ -25,7 +25,7 @@ async def handle_orders(message: Message) -> None:
     async with session_scope() as session:
         db_user = await session.scalar(select(User).where(User.telegram_id == tg_id))
         if not db_user:
-            await message.answer("سفارشی ثبت نشده است.")
+            await message.answer("ℹ️ سفارشی ثبت نشده است.")
             return
         stmt = (
             select(Order, Plan)
@@ -36,7 +36,7 @@ async def handle_orders(message: Message) -> None:
         )
         rows = (await session.execute(stmt)).all()
         if not rows:
-            await message.answer("سفارشی ثبت نشده است.")
+            await message.answer("ℹ️ سفارشی ثبت نشده است.")
             return
         lines = ["📦 سفارش‌های من (آخرین 10 مورد)"]
         for o, p in rows:
@@ -209,7 +209,7 @@ async def cb_order_attach_confirm_replace(cb: CallbackQuery) -> None:
             )
         ).first()
         if not row:
-            await cb.answer("Order not found", show_alert=True)
+            await cb.answer("⚠️ سفارش یافت نشد", show_alert=True)
             return
         order, user = row
         order.provider_ref = None
@@ -306,7 +306,7 @@ async def handle_attach_media(message: Message) -> None:
             )
         except Exception:
             pass
-        await message.answer("رسید ثبت شد و در صف بررسی ادمین قرار گرفت.")
+        await message.answer("✅ رسید ثبت شد و در صف بررسی ادمین قرار گرفت.")
         # Optionally: inform logs channel in future via notify_log
         # ارسال برای ادمین‌ها با دکمه‌های Approve/Reject
         admin_raw = os.getenv("TELEGRAM_ADMIN_IDS", "")
