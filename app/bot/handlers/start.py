@@ -119,14 +119,14 @@ async def handle_start(message: Message) -> None:
             return
     if _is_admin(message):
         text = (
-            "به MarzbanSudo خوش آمدید، ادمین عزیز!\n\n"
-            "از دکمه‌ها برای مدیریت استفاده کنید. دستورات اسلشی فعال‌اند ولی در منو نمایش داده نمی‌شوند."
+            "👋 به MarzbanSudo خوش آمدید، ادمین عزیز!\n\n"
+            "🧭 از دکمه‌ها برای مدیریت استفاده کنید. دستورات اسلشی فعال‌اند ولی در منو نمایش داده نمی‌شوند."
         )
         await message.answer(text, reply_markup=_admin_keyboard())
     else:
         text = (
-            "به MarzbanSudo خوش آمدید!\n\n"
-            "از دکمه‌های زیر استفاده کنید: خرید پلن، مشاهده سفارش‌ها و وضعیت اکانت."
+            "👋 به MarzbanSudo خوش آمدید!\n\n"
+            "از دکمه‌های زیر استفاده کنید: 🛒 خرید پلن، 📦 مشاهده سفارش‌ها و 👤 وضعیت اکانت."
         )
         await message.answer(text, reply_markup=_user_keyboard())
 
@@ -208,7 +208,7 @@ async def _get_pv_enabled() -> bool:
 @router.message(F.text == "📱 تنظیمات احراز شماره")
 async def admin_phone_verify_menu(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     enabled = await _get_pv_enabled()
     status = "فعال" if enabled else "غیرفعال"
@@ -222,7 +222,7 @@ async def admin_phone_verify_menu(message: Message) -> None:
 @router.callback_query(F.data.in_({"pv:on", "pv:off", "pv:refresh"}))
 async def cb_admin_pv_toggle(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     if cb.data in {"pv:on", "pv:off"}:
         val = "1" if cb.data == "pv:on" else "0"
@@ -234,7 +234,7 @@ async def cb_admin_pv_toggle(cb: CallbackQuery) -> None:
             else:
                 row.value = val
             await session.commit()
-        await cb.answer("ذخیره شد")
+        await cb.answer("✅ ذخیره شد")
     # Refresh view
     enabled = await _get_pv_enabled()
     status = "فعال" if enabled else "غیرفعال"
