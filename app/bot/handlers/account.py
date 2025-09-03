@@ -246,8 +246,8 @@ async def cb_account_refresh(cb: CallbackQuery) -> None:
             await cb.message.answer("⚠️ خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")
         await cb.answer()
     except Exception:
-    await cb.message.answer("⚠️ اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
-    await cb.answer()
+        await cb.message.answer("⚠️ اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
+        await cb.answer()
 
 
 @router.callback_query(F.data.startswith("acct:svc:"))
