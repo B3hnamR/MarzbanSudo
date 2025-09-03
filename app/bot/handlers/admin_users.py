@@ -262,7 +262,10 @@ async def cb_user_ban(cb: CallbackQuery) -> None:
             return
     # notify user
     try:
-        await cb.message.bot.send_message(chat_id=u.telegram_id, text=("اکانت شما توسط ادمین غیرفعال شد." if new_status == "disabled" else "اکانت شما توسط ادمین فعال شد."))
+        if new_status == "disabled":
+            await cb.message.bot.send_message(chat_id=u.telegram_id, text="⛔️ حساب شما در ربات بن شد و تمامی سرویس‌ها غیرفعال شدند.")
+        else:
+            await cb.message.bot.send_message(chat_id=u.telegram_id, text="✅ حساب شما در ربات رفع بن شد و سرویس‌ها فعال شدند.")
     except Exception:
         pass
     text, kb = await _render_user_detail(u)
@@ -322,7 +325,10 @@ async def cb_user_banbot(cb: CallbackQuery) -> None:
         pass
     # Notify user
     try:
-        await cb.message.bot.send_message(chat_id=u.telegram_id, text=("حساب شما در ربات رفع بن شد و سرویس‌ها فعال شدند." if currently_banned else "حساب شما در ربات بن شد و تمامی سرویس‌ها غیرفعال شدند."))
+        if currently_banned:
+            await cb.message.bot.send_message(chat_id=u.telegram_id, text="✅ حساب شما در ربات رفع بن شد و سرویس‌ها فعال شدند.")
+        else:
+            await cb.message.bot.send_message(chat_id=u.telegram_id, text="⛔️ حساب شما در ربات بن شد و تمامی سرویس‌ها غیرفعال شدند.")
     except Exception:
         pass
     # Refresh view
