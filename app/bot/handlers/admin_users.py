@@ -941,16 +941,35 @@ async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
         p = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
     if not (u and p):
         return False, "not found"
+    username = u.marzban_username
     try:
-        info = await ops.provision_for_plan(u.marzban_username, p)
+        info = await ops.provision_for_plan(username, p)
     except Exception:
         return False, "provision error"
-    # Persist order and token
+    # Persist order, link to UserService, and token
     async with session_scope() as session:
         u2 = await session.scalar(select(User).where(User.id == uid))
+        # Upsert UserService for this username
+        usvc = await session.scalar(select(UserService).where(UserService.user_id == u2.id, UserService.username == username))
+        if not usvc:
+            usvc = UserService(user_id=u2.id, username=username, status="active")
+            session.add(usvc)
+            await session.flush()
+        # Extract token
+        token = None
+        try:
+            sub_url = info.get("subscription_url", "") if isinstance(info, dict) else ""
+            token = sub_url.rstrip("/").split("/")[-1] if sub_url else None
+        except Exception:
+            token = None
+        if token:
+            usvc.last_token = token
+            u2.subscription_token = token  # backward-compat
+        # Create order linked to the service
         o = Order(
             user_id=u2.id,
             plan_id=p.id,
+            user_service_id=usvc.id,
             plan_template_id=p.template_id,
             plan_title=p.title,
             plan_price=Decimal('0'),
@@ -969,14 +988,6 @@ async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
             provisioned_at=datetime.utcnow(),
         )
         session.add(o)
-        token = None
-        try:
-            sub_url = info.get("subscription_url", "") if isinstance(info, dict) else ""
-            token = sub_url.rstrip("/").split("/")[-1] if sub_url else None
-        except Exception:
-            token = None
-        if token:
-            u2.subscription_token = token
         await session.commit()
     # Notify user
     try:
@@ -987,7 +998,7 @@ async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
         ]
         if token and sub_domain:
             msg_lines += [
-                f"🔗 لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
+                f"�� لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
                 f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray",
                 f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
             ]
@@ -1009,6 +1020,14 @@ async def _apply_username_change_and_provision(uid: int, tpl_id: int, new_userna
         await ops.replace_user_username(old, new_username, note=f"grant tpl:{tpl_id}")
     except Exception:
         return False, "rename error"
+    # Ensure a UserService row is present for the new username before provisioning record
+    async with session_scope() as session:
+        u2 = await session.scalar(select(User).where(User.id == uid))
+        usvc = await session.scalar(select(UserService).where(UserService.user_id == u2.id, UserService.username == new_username))
+        if not usvc:
+            usvc = UserService(user_id=u2.id, username=new_username, status="active")
+            session.add(usvc)
+            await session.commit()
     return await _provision_and_record(uid, tpl_id)
 
 
