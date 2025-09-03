@@ -121,7 +121,10 @@ class BanGateMiddleware(BaseMiddleware):
                         logger.info("ban_gate: appeal:start set capture", extra={"extra": {"tg_id": tg_id}})
                     except Exception:
                         pass
-                    await event.message.answer("لطفاً توضیح خود را درباره رفع بن در یک پیام متنی ارسال کنید (تنها یک‌بار).")
+                    try:
+                        await event.bot.send_message(chat_id=tg_id, text="لطفاً توضیح خود را درباره رفع بن در یک پیام متنی ارسال کنید (تنها یک‌بار).")
+                    except Exception:
+                        pass
                     await event.answer()
                     return None
                 elif status == "pending":
