@@ -107,15 +107,32 @@ class BanGateMiddleware(BaseMiddleware):
                 # ignore non-message when capturing
                 return None
 
-        # Pass-through appeal callbacks to routers (dedicated handler processes it)
+        # Handle appeal callbacks directly to ensure reliability
         if isinstance(event, CallbackQuery):
             cb_data = (event.data or "").strip()
             if cb_data.startswith("appeal:"):
                 try:
-                    logger.info("ban_gate: callback passthrough", extra={"extra": {"tg_id": tg_id, "data": cb_data}})
+                    logger.info("ban_gate: callback received", extra={"extra": {"tg_id": tg_id, "data": cb_data}})
                 except Exception:
                     pass
-                return await handler(event, data)
+                if status == "none":
+                    _APPEAL_CAPTURE[tg_id] = True
+                    try:
+                        logger.info("ban_gate: appeal:start set capture", extra={"extra": {"tg_id": tg_id}})
+                    except Exception:
+                        pass
+                    await event.message.answer("لطفاً توضیح خود را درباره رفع بن در یک پیام متنی ارسال کنید (تنها یک‌بار).")
+                    await event.answer()
+                    return None
+                elif status == "pending":
+                    await event.answer("در دست بررسی", show_alert=True)
+                    return None
+                elif status == "denied":
+                    await event.answer("درخواست شما رد شده است.", show_alert=True)
+                    return None
+                else:
+                    await event.answer("blocked")
+                    return None
 
         # Generic banned notices
         if status == "none":
