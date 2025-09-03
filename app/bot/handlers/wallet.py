@@ -65,7 +65,7 @@ async def admin_wallet_manual_add_start(message: Message) -> None:
         pass
     logger.info("wallet.admin_manual_add_start.cleanup", extra={"extra": {"uid": admin_id}})
     # Set in-memory flag to enable admin manual-add capture handlers
-    _WALLET_MANUAL_ADD_INTENT[admin_id] = {"active": True}
+    _WALLET_MANUAL_ADD_INTENT[admin_id] = {"active": True, "stage": "await_ref"}
     await set_intent_json(f"INTENT:WADM:{admin_id}", {"stage": "await_ref", "user_id": None, "unit": None, "ts": datetime.utcnow().isoformat()})
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="لغو", callback_data="walletadm:add:cancel")]])
     await message.answer("👤 لطفاً شناسه کاربر را ارسال کنید (نام‌کاربری یا 🆔 تلگرام).", reply_markup=kb)
@@ -87,7 +87,7 @@ async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
         pass
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and isinstance(getattr(m, "text", None), str) and __import__("re").fullmatch(r"^(?:\d{5,}|[a-z0-9_]{3,})$", (m.text or "").strip().lower().lstrip("@")) is not None)
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("stage") == "await_ref" and isinstance(getattr(m, "text", None), str) and __import__("re").fullmatch(r"^(?:\d{5,}|[a-z0-9_]{3,})$", (m.text or "").strip().lower().lstrip("@")) is not None)
 async def admin_wallet_manual_add_ref(message: Message) -> None:
     admin_id = message.from_user.id
     logger.info("wallet.admin_manual_add_ref", extra={"extra": {"uid": admin_id, "text": (message.text or "")}})
@@ -141,11 +141,13 @@ async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
         await cb.answer("واحد نامعتبر", show_alert=True)
         return
     await set_intent_json(f"INTENT:WADM:{uid}", {"stage": "await_amount", "user_id": payload.get("user_id"), "unit": unit, "ts": datetime.utcnow().isoformat()})
+    # Reflect stage in in-memory flag to guide handler routing
+    _WALLET_MANUAL_ADD_INTENT[uid] = {**_WALLET_MANUAL_ADD_INTENT.get(uid, {"active": True}), "active": True, "stage": "await_amount"}
     await cb.message.answer("مبلغ را به صورت عدد ارسال کنید.")
     await cb.answer()
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and isinstance(getattr(m, "text", None), str) and __import__("re").fullmatch(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]*$", m.text or "") is not None)
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("stage") == "await_amount" and isinstance(getattr(m, "text", None), str) and __import__("re").fullmatch(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]*$", m.text or "") is not None)
 async def admin_wallet_manual_add_amount(message: Message) -> None:
     admin_id = message.from_user.id
     logger.info("wallet.admin_manual_add_amount.enter", extra={"extra": {"uid": admin_id, "text": (message.text or "")}})
@@ -203,7 +205,7 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
     await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
 
 # Fallback: capture arbitrary text for admin amount stage
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and isinstance(getattr(m, "text", None), str) and __import__("re").search(r"\d", m.text or "") is not None)
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("stage") == "await_amount" and isinstance(getattr(m, "text", None), str) and __import__("re").search(r"\d", m.text or "") is not None)
 async def admin_wallet_manual_add_amount_fallback(message: Message) -> None:
     admin_id = message.from_user.id if message.from_user else None
     logger.info("wallet.admin_manual_add_amount_fallback.enter", extra={"extra": {"uid": admin_id, "text": (message.text or "")}})
@@ -922,6 +924,10 @@ async def admin_wallet_settings_menu(message: Message) -> None:
         _WALLET_MANUAL_ADD_INTENT.pop(uid, None)
         from app.utils.intent_store import clear_intent as _clear
         await _clear(f"INTENT:WADM:{uid}")
+        # Also clear any lingering reject-with-reason intents to avoid mis-capturing admin texts
+        _WALLET_REJECT_REASON_INTENT.pop(uid, None)
+        await _clear(f"INTENT:WREJ:{uid}")
+        await _clear(f"INTENT:WREJCTX:{uid}")
     except Exception:
         pass
     async with session_scope() as session:
