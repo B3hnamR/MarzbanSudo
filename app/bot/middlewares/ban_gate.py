@@ -75,7 +75,7 @@ class BanGateMiddleware(BaseMiddleware):
         # Banned: handle Appeal-only flow
         status = await _get_appeal_status(tg_id)
 
-        # Appeal capture state
+        # Appeal capture state (keep here for compatibility if handler not wired)
         if _APPEAL_CAPTURE.get(tg_id, False):
             if isinstance(event, Message):
                 text = (event.text or "").strip()
@@ -107,29 +107,15 @@ class BanGateMiddleware(BaseMiddleware):
                 # ignore non-message when capturing
                 return None
 
-        # Handle appeal:* callbacks robustly
+        # Pass-through appeal callbacks to routers (dedicated handler processes it)
         if isinstance(event, CallbackQuery):
             cb_data = (event.data or "").strip()
-            try:
-                logger.info("ban_gate: callback received", extra={"extra": {"tg_id": tg_id, "data": cb_data}})
-            except Exception:
-                pass
             if cb_data.startswith("appeal:"):
-                if status == "none":
-                    _APPEAL_CAPTURE[tg_id] = True
-                    try:
-                        logger.info("ban_gate: appeal:start received", extra={"extra": {"tg_id": tg_id}})
-                    except Exception:
-                        pass
-                    await event.message.answer("لطفاً توضیح خود را درباره رفع بن در یک پیام متنی ارسال کنید (تنها یک‌بار).")
-                    await event.answer()
-                    return None
-                elif status == "pending":
-                    await event.answer("در دست بررسی", show_alert=True)
-                    return None
-                elif status == "denied":
-                    await event.answer("درخواست شما رد شده است.", show_alert=True)
-                    return None
+                try:
+                    logger.info("ban_gate: callback passthrough", extra={"extra": {"tg_id": tg_id, "data": cb_data}})
+                except Exception:
+                    pass
+                return await handler(event, data)
 
         # Generic banned notices
         if status == "none":
