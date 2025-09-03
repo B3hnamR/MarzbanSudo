@@ -106,8 +106,14 @@ class BanGateMiddleware(BaseMiddleware):
 
         # Generic banned notices
         if status == "none":
-            # Show appeal button
+            # Show appeal button and remove reply keyboard
             try:
+                # Remove reply keyboard first (send minimal text to satisfy Telegram)
+                try:
+                    from aiogram.types import ReplyKeyboardRemove
+                    await event.bot.send_message(chat_id=tg_id, text="⛔️", reply_markup=ReplyKeyboardRemove())
+                except Exception:
+                    pass
                 if isinstance(event, Message):
                     await event.answer(
                         "حساب شما در ربات بن شده است. اگر فکر می‌کنید اشتباهی رخ داده، می‌توانید یک‌بار درخواست رفع بن ارسال کنید.",
@@ -119,12 +125,6 @@ class BanGateMiddleware(BaseMiddleware):
                         reply_markup=_appeal_intro_kb()
                     )
                     await event.answer("blocked")
-                # Remove reply keyboard for banned users to avoid visible menu
-                try:
-                    from aiogram.types import ReplyKeyboardRemove
-                    await event.bot.send_message(chat_id=tg_id, text="", reply_markup=ReplyKeyboardRemove())
-                except Exception:
-                    pass
             except Exception:
                 pass
             return None
