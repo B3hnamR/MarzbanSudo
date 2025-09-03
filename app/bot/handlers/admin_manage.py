@@ -226,7 +226,7 @@ async def admin_list_expired(message: Message) -> None:
         lines = []
         for r in rows[:20]:
             lines.append(f"- {r.get('username')} | status={r.get('status')} | expire={r.get('expire')}")
-        await message.answer("ℹ️ Expired users (first 20):\n" + "\n".join(lines))
+        await message.answer("ℹ️ کاربران منقضی‌شده (۲۰ مورد اول):\n" + "\n".join(lines))
     except Exception as e:
         await message.answer(f"⚠️ خطا در admin_list_expired: {e}")
 
