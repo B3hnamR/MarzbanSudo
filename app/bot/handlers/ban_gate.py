@@ -93,7 +93,7 @@ async def ban_gate_messages(message: Message) -> None:
             reply_markup=_appeal_intro_kb()
         )
     elif status == "pending":
-        await message.answer("درخو��ست رفع بن شما در دست بررسی است.")
+        await message.answer("درخواست رفع بن شما در دست بررسی است.")
     elif status == "denied":
         await message.answer("درخواست رفع بن شما رد شده است. امکان استفاده از ربات وجود ندارد.")
     else:

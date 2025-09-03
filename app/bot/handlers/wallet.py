@@ -44,7 +44,7 @@ _WALLET_MANUAL_ADD_INTENT: Dict[int, Dict[str, object]] = {}
 @router.message(F.text == "➕ شارژ دستی")
 async def admin_wallet_manual_add_start(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
-        await message.answer("شما دسترسی ادم��ن ندارید.")
+        await message.answer("شما دسترسی ادمین ندارید.")
         return
     admin_id = message.from_user.id
     logger.info("wallet.admin_manual_add_start", extra={"extra": {"uid": admin_id}})

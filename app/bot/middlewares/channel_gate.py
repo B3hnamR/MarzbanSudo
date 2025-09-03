@@ -32,6 +32,10 @@ class ChannelGateMiddleware(BaseMiddleware):
         except Exception:
             pass
 
+        # Allow appeal callbacks to pass (ban appeal must not be blocked by channel gate)
+        if isinstance(event, CallbackQuery) and (event.data or "").startswith("appeal:"):
+            return await handler(event, data)
+
         # Check membership
         try:
             member = await event.bot.get_chat_member(chat_id=channel, user_id=user.id)
@@ -58,7 +62,7 @@ class ChannelGateMiddleware(BaseMiddleware):
             else:
                 await event.message.answer(
                     "برای استفاده از ربات، ابتدا در کانال عضو شوید.\n"
-                    "پس از عضویت، روی دکمه \"من عضو ��دم ✅\" بزنید.",
+                    "پس از عضویت، روی دکمه \"من عضو شدم ✅\" بزنید.",
                     reply_markup=kb,
                 )
                 await event.answer()
