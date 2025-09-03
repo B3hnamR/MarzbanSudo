@@ -300,6 +300,13 @@ async def cb_user_banbot(cb: CallbackQuery) -> None:
                 # Clear or set to 0
                 row.value = "0"
             u.status = "active"
+            # Clear RBK_SENT so that future bans can send keyboard removal again
+            try:
+                rbk = await session.scalar(select(Setting).where(Setting.key == f"USER:{u.telegram_id}:RBK_SENT"))
+                if rbk:
+                    await session.delete(rbk)
+            except Exception:
+                pass
             await session.commit()
         else:
             if not row:

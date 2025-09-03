@@ -18,6 +18,23 @@ async def _is_banned(tg_id: int) -> bool:
         return bool(row and str(row.value).strip().lower() in {"1", "true"})
 
 
+async def _rbk_sent(tg_id: int) -> bool:
+    async with session_scope() as session:
+        row = await session.scalar(select(Setting).where(Setting.key == f"USER:{tg_id}:RBK_SENT"))
+        return bool(row and str(row.value).strip())
+
+
+async def _mark_rbk_sent(tg_id: int) -> None:
+    from datetime import datetime
+    async with session_scope() as session:
+        row = await session.scalar(select(Setting).where(Setting.key == f"USER:{tg_id}:RBK_SENT"))
+        if not row:
+            session.add(Setting(key=f"USER:{tg_id}:RBK_SENT", value=datetime.utcnow().isoformat()))
+        else:
+            row.value = datetime.utcnow().isoformat()
+        await session.commit()
+
+
 class BanGateMiddleware(BaseMiddleware):
     """
     Hard ban gate: blocks all messages and callbacks for banned users.
@@ -39,11 +56,20 @@ class BanGateMiddleware(BaseMiddleware):
         if not await _is_banned(tg_id):
             return await handler(event, data)
 
-        # Remove reply keyboard to ensure user has no visible menu
+        # Remove reply keyboard once per ban session
         try:
-            await event.bot.send_message(chat_id=tg_id, text="⛔️", reply_markup=ReplyKeyboardRemove())
+            sent_before = await _rbk_sent(tg_id)
         except Exception:
-            pass
+            sent_before = False
+        if not sent_before:
+            try:
+                await event.bot.send_message(chat_id=tg_id, text="⛔️", reply_markup=ReplyKeyboardRemove())
+            except Exception:
+                pass
+            try:
+                await _mark_rbk_sent(tg_id)
+            except Exception:
+                pass
 
         # Block further processing and notify user minimally
         if isinstance(event, Message):

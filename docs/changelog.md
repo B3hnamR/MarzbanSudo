@@ -688,3 +688,45 @@ Outcome: Improved account UX, per-service actions, and monetization via extra GB
 - Add defensive checks in sensitive handlers (e.g., /account and per-service views) to ensure no data is shown to banned users if middleware is bypassed. Return only the ban/appeal notice.
 
 Rationale: This design enforces a strict, auditable state machine for banned users, prevents accidental data exposure, provides a single-shot Appeal channel, and equips admins with reasoned ban and review controls.
+
+---
+
+## 2025-09-03 – Admin grant linkage and service token sync
+
+- Edit: app/bot/handlers/admin_users.py
+  - After provisioning via admin grant, upsert UserService for the user/username, set `order.user_service_id`, and persist `last_token` (also update `user.subscription_token` for backward compatibility).
+  - On rename+grant, ensure a UserService row exists for the new username before recording the order.
+
+Outcome: Plans granted from the admin panel are now reliably attached to the correct user's service; orders are linked to `user_service_id` and delivery tokens are persisted.
+
+---
+
+## 2025-09-03 – Ban system simplification (remove appeal, hard lockout, emoji notifications)
+
+- Edit: app/bot/middlewares/ban_gate.py
+  - Removed the Appeal feature entirely; implemented a hard ban gate that removes reply keyboards and blocks all messages/callbacks for banned users.
+- Edit: app/bot/handlers/admin_users.py
+  - Updated user notifications on ban/unban with emojis:
+    - Ban: "⛔️ حساب شما در ربات بن شد و تمامی سرویس‌ها غیرفعال شدند."
+    - Unban: "✅ حساب شما در ربات رفع بن شد و سرویس‌ها فعال شدند."
+
+Outcome: Banned users have no interactive surface (menu/inline actions); the UX is clearer via emoji-enhanced notifications.
+
+---
+
+## 2025-09-03 – Startup stability and cleanup
+
+- Edit: app/main.py
+  - Fixed an indentation error in router includes that caused a startup SyntaxError.
+  - Removed inclusion of the obsolete `handlers/ban_gate` router (SkipHandler import mismatch), relying solely on BanGateMiddleware.
+
+Outcome: Bot starts cleanly without import/syntax errors; ban enforcement remains effective via middleware.
+
+---
+
+## 2025-09-03 – Minor i18n polish
+
+- Edit: app/bot/middlewares/channel_gate.py
+  - Corrected Persian string for the join confirmation button to "من عضو شدم ✅".
+
+Outcome: Consistent Persian UI text.
