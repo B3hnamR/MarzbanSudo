@@ -44,7 +44,7 @@ _WALLET_MANUAL_ADD_INTENT: Dict[int, Dict[str, object]] = {}
 @router.message(F.text == "➕ شارژ دستی")
 async def admin_wallet_manual_add_start(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     admin_id = message.from_user.id
     logger.info("wallet.admin_manual_add_start", extra={"extra": {"uid": admin_id}})
@@ -98,7 +98,7 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
         return
     if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
         _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دس��رسی ادمین ندارید.")
         return
     ref = (message.text or "").strip()
     norm = ref.strip().lower().lstrip("@")
@@ -133,7 +133,7 @@ async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
                 await clear_intent(f"INTENT:WADM:{uid}")
         except Exception:
             pass
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     unit = cb.data.split(":")[-1]
     logger.info("wallet.admin_manual_add_unit.choice", extra={"extra": {"uid": uid, "unit": unit}})
@@ -202,7 +202,7 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
     except Exception:
         pass
     _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
-    await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
+    await message.answer(f"✅ انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
 
 # Fallback: capture arbitrary text for admin amount stage
 @router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("stage") == "await_amount" and isinstance(getattr(m, "text", None), str) and __import__("re").search(r"\d", m.text or "") is not None)
@@ -255,14 +255,14 @@ async def admin_wallet_manual_add_amount_fallback(message: Message) -> None:
     except Exception:
         pass
     await clear_intent(f"INTENT:WADM:{admin_id}")
-    await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
+    await message.answer(f"✅ انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
 
 
 @router.message(F.text == "💳 درخواست‌های شارژ")
 async def admin_wallet_pending_topups(message: Message) -> None:
     # List up to 9 pending wallet top-ups with Approve/Reject buttons
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     # Cancel any lingering manual-add intent to avoid cross-capture
     try:
@@ -280,7 +280,7 @@ async def admin_wallet_pending_topups(message: Message) -> None:
             )
         ).all()
     if not rows:
-        await message.answer("درخواستی برای بررسی موجود نیست.")
+        await message.answer("ℹ️ درخواستی برای بررسی موجود نیست.")
         return
     for topup, user in rows:
         tmn = int((Decimal(topup.amount or 0) / Decimal("10")).to_integral_value())
@@ -701,7 +701,7 @@ async def handle_wallet_photo(message: Message) -> None:
 @router.callback_query(F.data.startswith("wallet:rejectr:"))
 async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         topup_id = int(cb.data.split(":")[2])
@@ -732,7 +732,7 @@ async def admin_wallet_reject_with_reason_text(message: Message) -> None:
             await clear_intent(f"INTENT:WREJCTX:{admin_id}")
         except Exception:
             pass
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     reason = message.text.strip()
     payload = await get_intent_json(f"INTENT:WREJ:{admin_id}")
@@ -745,7 +745,7 @@ async def admin_wallet_reject_with_reason_text(message: Message) -> None:
         row = await session.execute(select(WalletTopUp, User).join(User, WalletTopUp.user_id == User.id).where(WalletTopUp.id == topup_id))
         data = row.first()
         if not data:
-            await message.answer("TopUp not found")
+            await message.answer("⚠️ درخواست یافت نشد.")
             return
         topup, user = data
         res = await session.execute(
@@ -795,12 +795,12 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
         await cb.answer()
         return
     if not await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         topup_id = int(cb.data.split(":")[2])
     except Exception:
-        await cb.answer("شناسه نامعتبر", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر", show_alert=True)
         return
     admin_id = cb.from_user.id
     new_balance_for_msg: int | None = None
@@ -911,7 +911,7 @@ async def admin_wallet_settings_menu(message: Message) -> None:
     logger.info("wallet.admin_settings_menu: enter", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         logger.info("wallet.admin_settings_menu: no_capability", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     # Best-effort: cancel any lingering plan management intents to avoid cross-capture of inputs
     try:
@@ -943,7 +943,7 @@ async def admin_wallet_settings_menu(message: Message) -> None:
 @router.callback_query(F.data == "walletadmin:min:refresh")
 async def cb_walletadmin_min_refresh(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     async with session_scope() as session:
         min_irr = await _get_min_topup_value(session)
