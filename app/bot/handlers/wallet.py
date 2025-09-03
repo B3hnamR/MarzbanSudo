@@ -65,7 +65,7 @@ async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
         pass
 
 
-@router.message(F.text)
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and isinstance(getattr(m, "text", None), str))
 async def admin_wallet_manual_add_ref(message: Message) -> None:
     admin_id = message.from_user.id
     # Only handle when admin has an active manual-add intent at 'await_ref' stage
@@ -174,7 +174,7 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
     await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
 
 # Fallback: capture arbitrary text for admin amount stage
-@router.message(F.text)
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and isinstance(getattr(m, "text", None), str))
 async def admin_wallet_manual_add_amount_fallback(message: Message) -> None:
     admin_id = message.from_user.id if message.from_user else None
     if not admin_id:
@@ -313,6 +313,11 @@ async def wallet_menu(message: Message) -> None:
     if not message.from_user:
         return
     tg_id = message.from_user.id
+    # Clear any lingering admin manual-add intent to avoid cross-capture when admin uses wallet as a user
+    try:
+        await clear_intent(f"INTENT:WADM:{tg_id}")
+    except Exception:
+        pass
     async with session_scope() as session:
         user = await session.scalar(select(User).where(User.telegram_id == tg_id))
         if not user:
@@ -344,6 +349,11 @@ async def wallet_menu(message: Message) -> None:
 @router.callback_query(F.data == "wallet:custom")
 async def cb_wallet_custom(cb: CallbackQuery) -> None:
     await cb.message.answer("مبلغ دلخواه را به تومان ارسال کنید (مثلاً 76000 برای ۷۶۰۰۰ تومان).")
+    # Clear admin manual-add intent for this user (if admin), to avoid text capture conflicts
+    try:
+        await clear_intent(f"INTENT:WADM:{cb.from_user.id}")
+    except Exception:
+        pass
     await set_intent_json(f"INTENT:TOPUP:{cb.from_user.id}", {"amount": "-1", "ts": datetime.utcnow().isoformat()})
     await cb.answer()
 
@@ -677,7 +687,7 @@ async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text)
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and isinstance(getattr(m, "text", None), str))
 async def admin_wallet_reject_with_reason_text(message: Message) -> None:
     admin_id = message.from_user.id if message.from_user else None
     if not admin_id or not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
