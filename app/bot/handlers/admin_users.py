@@ -1011,7 +1011,7 @@ async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
         ]
         if token and sub_domain:
             msg_lines += [
-                f"�� لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
+                f"🔗 لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
                 f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray",
                 f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
             ]
