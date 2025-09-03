@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Tuple
+import logging
 
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -18,6 +19,7 @@ from app.utils.username import tg_username
 from app.utils.intent_store import set_intent_json, get_intent_json, clear_intent
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 # Helpers
 _DIGIT_MAP = str.maketrans(
@@ -45,6 +47,7 @@ async def admin_wallet_manual_add_start(message: Message) -> None:
         await message.answer("شما دسترسی ادم��ن ندارید.")
         return
     admin_id = message.from_user.id
+    logger.debug("wallet.admin_manual_add_start", extra={"extra": {"uid": admin_id}})
     # Set in-memory flag to enable admin manual-add capture handlers
     _WALLET_MANUAL_ADD_INTENT[admin_id] = {"active": True}
     await set_intent_json(f"INTENT:WADM:{admin_id}", {"stage": "await_ref", "user_id": None, "unit": None, "ts": datetime.utcnow().isoformat()})
@@ -498,12 +501,13 @@ async def handle_wallet_custom_amount(message: Message) -> None:
 
 
 # Fallback: if user sends arbitrary text while TOPUP intent is active, try to parse amount
-@router.message(F.text)
+@router.message(F.text.regexp(r".*[0-9\u06F0-\u06F9].*"))
 async def handle_wallet_custom_amount_fallback(message: Message) -> None:
     if not message.from_user or not isinstance(getattr(message, "text", None), str):
         return
     uid = message.from_user.id
     payload = await get_intent_json(f"INTENT:TOPUP:{uid}")
+    logger.debug("wallet.custom_amount_fallback", extra={"extra": {"uid": uid, "has_intent": bool(payload), "text": (message.text or "")[:48]}})
     if not payload or str(payload.get("amount")) != "-1":
         return
     raw = _normalize_amount(message.text)
@@ -878,7 +882,9 @@ def _admin_wallet_keyboard(min_irr: Decimal, max_irr: Decimal | None) -> InlineK
 
 @router.message(F.text == "💼 تنظیمات کیف پول")
 async def admin_wallet_settings_menu(message: Message) -> None:
+    logger.debug("wallet.admin_settings_menu: enter", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
+        logger.debug("wallet.admin_settings_menu: no_capability", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     # Best-effort: cancel any lingering plan management intents to avoid cross-capture of inputs
