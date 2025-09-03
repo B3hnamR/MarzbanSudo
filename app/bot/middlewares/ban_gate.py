@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, Any, Callable, Awaitable, List
 from datetime import datetime
+import logging
 
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -14,6 +15,7 @@ from app.services.security import get_admin_ids
 
 # One-time appeal capture intent: user_id -> True
 _APPEAL_CAPTURE: Dict[int, bool] = {}
+logger = logging.getLogger(__name__)
 
 
 async def _is_banned(tg_id: int) -> bool:
@@ -65,6 +67,10 @@ class BanGateMiddleware(BaseMiddleware):
         # Check banned
         if not await _is_banned(tg_id):
             return await handler(event, data)
+        try:
+            logger.info("ban_gate: banned user intercepted", extra={"extra": {"tg_id": tg_id}})
+        except Exception:
+            pass
 
         # Banned: handle Appeal-only flow
         status = await _get_appeal_status(tg_id)
@@ -76,6 +82,10 @@ class BanGateMiddleware(BaseMiddleware):
                 if not text:
                     await event.answer("متن درخواست رفع بن را به‌صورت متنی ارسال کنید.")
                     return None
+                try:
+                    logger.info("ban_gate: appeal text captured", extra={"extra": {"tg_id": tg_id, "len": len(text)}})
+                except Exception:
+                    pass
                 await _ensure_user(tg_id)
                 await _set_setting(f"USER:{tg_id}:APPEAL_TEXT", text)
                 await _set_setting(f"USER:{tg_id}:APPEAL_STATUS", "pending")
@@ -100,6 +110,10 @@ class BanGateMiddleware(BaseMiddleware):
         # Handle appeal:start callback
         if isinstance(event, CallbackQuery) and (event.data or "").strip() == "appeal:start" and status == "none":
             _APPEAL_CAPTURE[tg_id] = True
+            try:
+                logger.info("ban_gate: appeal:start received", extra={"extra": {"tg_id": tg_id}})
+            except Exception:
+                pass
             await event.message.answer("لطفاً توضیح خود را درباره رفع بن در یک پیام متنی ارسال کنید (تنها یک‌بار).")
             await event.answer()
             return None
@@ -115,6 +129,10 @@ class BanGateMiddleware(BaseMiddleware):
                 except Exception:
                     pass
                 if isinstance(event, Message):
+                    try:
+                        logger.info("ban_gate: showing appeal intro", extra={"extra": {"tg_id": tg_id}})
+                    except Exception:
+                        pass
                     await event.answer(
                         "حساب شما در ربات بن شده است. اگر فکر می‌کنید اشتباهی رخ داده، می‌توانید یک‌بار درخواست رفع بن ارسال کنید.",
                         reply_markup=_appeal_intro_kb()
