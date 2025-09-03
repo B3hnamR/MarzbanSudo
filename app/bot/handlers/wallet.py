@@ -53,6 +53,10 @@ async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
 @router.message(F.text)
 async def admin_wallet_manual_add_ref(message: Message) -> None:
     admin_id = message.from_user.id
+    # Only handle when admin has an active manual-add intent at 'await_ref' stage
+    payload = await get_intent_json(f"INTENT:WADM:{admin_id}")
+    if not payload or payload.get("stage") != "await_ref":
+        return
     if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
         _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
         await message.answer("شما دسترسی ادمین ندارید.")
@@ -252,6 +256,7 @@ async def wallet_menu(message: Message) -> None:
             )
             session.add(user)
             await session.flush()
+            await session.commit()
         bal = Decimal(user.balance or 0)
         min_amt = await _get_min_topup(session)
         options = _amount_options(min_amt)

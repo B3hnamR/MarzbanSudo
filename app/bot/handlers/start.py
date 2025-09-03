@@ -67,6 +67,7 @@ async def handle_start(message: Message) -> None:
                     )
                     session.add(u)
                     await session.flush()
+                    await session.commit()
                 # Upsert Telegram username to settings for search (lowercased)
                 try:
                     tg_un = getattr(message.from_user, "username", None)
@@ -78,11 +79,44 @@ async def handle_start(message: Message) -> None:
                         else:
                             row.value = tg_un_l
                         await session.flush()
+                        await session.commit()
                 except Exception:
                     pass
     except Exception:
         pass
 
+    # Channel membership gate (applies to all users including admins)
+    channel = os.getenv("REQUIRED_CHANNEL", "").strip()
+    if channel and message.from_user:
+        try:
+            member = await message.bot.get_chat_member(chat_id=channel, user_id=message.from_user.id)
+            status = getattr(member, "status", None)
+            if status not in {"member", "creator", "administrator"}:
+                join_url = f"https://t.me/{channel.lstrip('@')}"
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📢 عضویت در کانال", url=join_url)],
+                    [InlineKeyboardButton(text="من عضو شدم ✅", callback_data="chk:chan")],
+                ])
+                txt = (
+                    "برای استفاده از ربات، ابتدا در کانال عضو شوید.\n"
+                    "پس از عضویت، روی دکمه \"من عضو شدم ✅\" بزنید."
+                )
+                await message.answer(txt, reply_markup=kb)
+                return
+        except Exception:
+            # If we cannot verify membership (bot not admin in channel), still enforce gate UI
+            join_url = f"https://t.me/{channel.lstrip('@')}"
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📢 عضویت در کانال", url=join_url)],
+                [InlineKeyboardButton(text="من عضو شدم ✅", callback_data="chk:chan")],
+            ])
+            txt = (
+                "برای استفاده از ربات، ابتدا در کانال عضو شوید.\n"
+                "توجه: برای بررسی خودکار عضویت، باید ربات را به عنوان ادم��ن کانال اضافه کنید.\n"
+                "پس از عضویت، روی دکمه \"من عضو شدم ✅\" بزنید."
+            )
+            await message.answer(txt, reply_markup=kb)
+            return
     if _is_admin(message):
         text = (
             "به MarzbanSudo خوش آمدید، ادمین عزیز!\n\n"
@@ -90,27 +124,6 @@ async def handle_start(message: Message) -> None:
         )
         await message.answer(text, reply_markup=_admin_keyboard())
     else:
-        # Channel membership gate (if required)
-        channel = os.getenv("REQUIRED_CHANNEL", "").strip()
-        if channel and message.from_user:
-            try:
-                member = await message.bot.get_chat_member(chat_id=channel, user_id=message.from_user.id)
-                status = getattr(member, "status", None)
-                if status not in {"member", "creator", "administrator"}:
-                    join_url = f"https://t.me/{channel.lstrip('@')}"
-                    kb = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="📢 عضویت در کانال", url=join_url)],
-                        [InlineKeyboardButton(text="من عضو شدم ✅", callback_data="chk:chan")],
-                    ])
-                    txt = (
-                        "برای استفاده از ربات، ابتدا در کانال عضو شوید.\n"
-                        "پس از عضویت، روی دکمه \"من عضو شدم ✅\" بزنید."
-                    )
-                    await message.answer(txt, reply_markup=kb)
-                    return
-            except Exception:
-                # If check fails, proceed without gate
-                pass
         text = (
             "به MarzbanSudo خوش آمدید!\n\n"
             "از دکمه‌های زیر استفاده کنید: خرید پلن، مشاهده سفارش‌ها و وضعیت اکانت."
@@ -174,7 +187,8 @@ async def cb_check_channel(cb: CallbackQuery) -> None:
             await cb.answer("عضو شدید")
             return
     except Exception:
-        pass
+        await cb.answer("امکان بررسی عضویت نیست. ربات باید ادمین کانال باشد.", show_alert=True)
+        return
     await cb.answer("هنوز عضو کانال نیستید.", show_alert=True)
 
 

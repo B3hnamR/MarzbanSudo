@@ -169,15 +169,25 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
                 await cb.answer()
                 return
         except Exception:
-            pass
+            # If cannot verify (bot not admin in channel), still enforce join UI
+            join_url = f"https://t.me/{channel.lstrip('@')}"
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📢 عضویت در کانال", url=join_url)],
+                [InlineKeyboardButton(text="من عضو شدم ✅", callback_data="chk:chan")],
+            ])
+            await cb.message.answer("برای ادامه خرید، ابتدا در کانال عضو شوید و سپس دوباره تلاش کنید.", reply_markup=kb)
+            await cb.answer()
+            return
     # Stage 2: Phone verification gate
     try:
         pv_enabled = False
         async with session_scope() as session:
             from sqlalchemy import select as sa_select
             row = await session.scalar(sa_select(Setting).where(Setting.key == "PHONE_VERIFICATION_ENABLED"))
-            if row and str(row.value).strip() in {"1", "true", "True"}:
-                pv_enabled = True
+            if row:
+                pv_enabled = str(row.value).strip() in {"1", "true", "True"}
+            else:
+                pv_enabled = os.getenv("PHONE_VERIFICATION_ENABLED", "0").strip() in {"1", "true", "True"}
             if pv_enabled and not is_admin_user:
                 row_v = await session.scalar(sa_select(Setting).where(Setting.key == f"USER:{cb.from_user.id}:PHONE_VERIFIED_AT"))
                 verified = bool(row_v and str(row_v.value).strip())
@@ -249,8 +259,18 @@ async def cb_plan_uname_rnd(cb: CallbackQuery) -> None:
     async with session_scope() as session:
         urow = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
         if not urow:
-            await cb.answer("ابتدا /start را بزنید.", show_alert=True)
-            return
+            # Auto-register user to allow purchase without requiring /start
+            urow = User(
+                telegram_id=cb.from_user.id,
+                marzban_username=tg_username(cb.from_user.id),
+                subscription_token=None,
+                status="active",
+                data_limit_bytes=0,
+                balance=0,
+            )
+            session.add(urow)
+            await session.flush()
+            await session.commit()
         candidate = None
         for _ in range(10):
             cand = _gen_username_random(cb.from_user.id)
@@ -346,8 +366,18 @@ async def cb_plan_mode_ext(cb: CallbackQuery) -> None:
     async with session_scope() as session:
         urow = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
         if not urow:
-            await cb.answer("ابتدا /start را بزنید.", show_alert=True)
-            return
+            # Auto-register user to proceed with extend flow
+            urow = User(
+                telegram_id=cb.from_user.id,
+                marzban_username=tg_username(cb.from_user.id),
+                subscription_token=None,
+                status="active",
+                data_limit_bytes=0,
+                balance=0,
+            )
+            session.add(urow)
+            await session.flush()
+            await session.commit()
         services = (await session.execute(select(UserService).where(UserService.user_id == urow.id).order_by(UserService.created_at.desc()))).scalars().all()
     if not services:
         await cb.message.answer("هیچ سرویسی برای تمدید یافت نشد. لطفاً 'اکانت جدید' را انتخاب کنید.")
