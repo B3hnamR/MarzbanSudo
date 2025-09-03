@@ -148,7 +148,7 @@ async def handle_account(message: Message) -> None:
             svcs = (await session.execute(select(UserService).where(UserService.user_id == u.id).order_by(UserService.created_at.desc()))).scalars().all()
     if not svcs:
         # Fallback to single summary when no services exist yet
-        await message.answer("در حال دریافت اطلاعات اکانت...")
+        await message.answer("⏳ در حال دریافت اطلاعات اکانت...")
         try:
             text, token, links = await _render_account_text(message.from_user.id)
             await message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
@@ -195,7 +195,7 @@ async def handle_account(message: Message) -> None:
             else:
                 await message.answer("خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")
         except Exception:
-            await message.answer("اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
+            await message.answer("⚠️ اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
         return
     # Render account summary + services list
     # Load phone from settings
@@ -235,19 +235,19 @@ async def cb_account_refresh(cb: CallbackQuery) -> None:
             await cb.message.edit_text(text, reply_markup=_acct_kb(bool(token), bool(links)))
         except Exception:
             await cb.message.answer(text, reply_markup=_acct_kb(bool(token), bool(links)))
-        await cb.answer("Updated")
+        await cb.answer("✅ بروزرسانی شد")
     except httpx.HTTPStatusError as e:
         status = e.response.status_code if e.response is not None else None
         if status == 404:
             await cb.message.answer(
-                "اکانت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید."
+                "ℹ️ اکانت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید."
             )
         else:
-            await cb.message.answer("خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")
+            await cb.message.answer("⚠️ خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")
         await cb.answer()
     except Exception:
-        await cb.message.answer("اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
-        await cb.answer()
+    await cb.message.answer("⚠️ اکانت شما در سیستم یافت نشد یا در حال حاضر اطلاعات قابل دریافت نیست.")
+    await cb.answer()
 
 
 @router.callback_query(F.data.startswith("acct:svc:"))
@@ -478,7 +478,7 @@ async def cb_account_qr(cb: CallbackQuery) -> None:
     # Use a simple QR generation service URL (Telegram fetches by URL)
     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={url}"
     try:
-        await cb.message.answer_photo(qr_url, caption="QR اشتراک شما")
+        await cb.message.answer_photo(qr_url, caption="🔳 QR اشتراک شما")
     except Exception:
         await cb.message.answer(url)
     await cb.answer()
@@ -643,7 +643,7 @@ async def cb_account_qr_svc(cb: CallbackQuery) -> None:
         return
     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={url}"
     try:
-        await cb.message.answer_photo(qr_url, caption="QR اشتراک سرویس")
+        await cb.message.answer_photo(qr_url, caption="🔳 QR اشتراک سرویس")
     except Exception:
         await cb.message.answer(url)
     await cb.answer()
@@ -718,7 +718,7 @@ async def cb_account_copy_all_svc(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "acct:pricegb:cfg")
 async def cb_account_price_gb_cfg(cb: CallbackQuery) -> None:
     if not cb.from_user or not is_admin_uid(cb.from_user.id):
-        await cb.answer("No access", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     price_tmn = _get_extra_gb_price_tmn()
     async with session_scope() as session:
@@ -733,7 +733,7 @@ async def cb_account_price_gb_cfg(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == "acct:pricegb:set")
 async def cb_account_price_gb_set(cb: CallbackQuery) -> None:
     if not cb.from_user or not is_admin_uid(cb.from_user.id):
-        await cb.answer("No access", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     _ADMIN_PRICE_PENDING[cb.from_user.id] = True
     await cb.message.answer("مبلغ هر GB را به تومان ارسال کنید (عدد صحیح).")
@@ -748,7 +748,7 @@ async def msg_account_price_gb_set(message: Message) -> None:
         return
     txt = (message.text or "").strip()
     if not txt.isdigit():
-        await message.answer("عدد صحیح به تومان ارسال کنید (مثلاً 20000).")
+        await message.answer("⚠️ عدد صحیح به تومان ارسال کنید (مثلاً 20000).")
         return
     val = int(txt)
     async with session_scope() as session:
@@ -759,7 +759,7 @@ async def msg_account_price_gb_set(message: Message) -> None:
             row.value = str(val)
         await session.commit()
     _ADMIN_PRICE_PENDING.pop(admin_id, None)
-    await message.answer(f"ذخیره شد. قیمت هر GB: {val:,} تومان")
+    await message.answer(f"✅ ذخیره شد. قیمت هر GB: {val:,} تومان")
 
 
 @router.callback_query(F.data == "acct:copyall")
