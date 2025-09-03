@@ -42,9 +42,11 @@ _WALLET_MANUAL_ADD_INTENT: Dict[int, Dict[str, object]] = {}
 @router.message(F.text == "➕ شارژ دستی")
 async def admin_wallet_manual_add_start(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("شما دسترسی ادم��ن ندارید.")
         return
     admin_id = message.from_user.id
+    # Set in-memory flag to enable admin manual-add capture handlers
+    _WALLET_MANUAL_ADD_INTENT[admin_id] = {"active": True}
     await set_intent_json(f"INTENT:WADM:{admin_id}", {"stage": "await_ref", "user_id": None, "unit": None, "ts": datetime.utcnow().isoformat()})
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="لغو", callback_data="walletadm:add:cancel")]])
     await message.answer("👤 لطفاً شناسه کاربر را ارسال کنید (نام‌کاربری یا 🆔 تلگرام).", reply_markup=kb)
@@ -56,6 +58,7 @@ async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
     try:
         if uid:
             await clear_intent(f"INTENT:WADM:{uid}")
+            _WALLET_MANUAL_ADD_INTENT.pop(uid, None)
     except Exception:
         pass
     await cb.answer("لغو شد")
@@ -65,7 +68,7 @@ async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
         pass
 
 
-@router.message(F.text.regexp(r"^(?:\d{5,}|[a-z0-9_]{3,})$"))
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and isinstance(getattr(m, "text", None), str) and __import__("re").fullmatch(r"^(?:\d{5,}|[a-z0-9_]{3,})$", (m.text or "").strip().lower().lstrip("@")) is not None)
 async def admin_wallet_manual_add_ref(message: Message) -> None:
     admin_id = message.from_user.id
     # Only handle when admin has an active manual-add intent at 'await_ref' stage
@@ -119,7 +122,7 @@ async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]*$"))
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and isinstance(getattr(m, "text", None), str) and __import__("re").fullmatch(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]*$", m.text or "") is not None)
 async def admin_wallet_manual_add_amount(message: Message) -> None:
     admin_id = message.from_user.id
     payload = await get_intent_json(f"INTENT:WADM:{admin_id}")
@@ -171,10 +174,11 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
         await clear_intent(f"INTENT:WADM:{admin_id}")
     except Exception:
         pass
+    _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
     await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
 
 # Fallback: capture arbitrary text for admin amount stage
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and isinstance(getattr(m, "text", None), str) and __import__("re").search(r"\d", m.text or "") is not None)
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and isinstance(getattr(m, "text", None), str) and __import__("re").search(r"\d", m.text or "") is not None)
 async def admin_wallet_manual_add_amount_fallback(message: Message) -> None:
     admin_id = message.from_user.id if message.from_user else None
     if not admin_id:
