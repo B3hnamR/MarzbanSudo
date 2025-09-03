@@ -44,22 +44,22 @@ def _admin_ids() -> List[int]:
 @router.message(Command("admin_create"))
 async def admin_create(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split(maxsplit=1) if message.text else []
     username = parts[1].strip() if len(parts) == 2 else tg_username(message.from_user.id)
     await message.answer(f"در حال ایجاد کاربر {username}...")
     try:
         await ops.create_user_minimal(username, note="admin:create")
-        await message.answer(f"ایجاد شد: {username}")
+        await message.answer(f"✅ ایجاد شد: {username}")
     except Exception as e:
-        await message.answer(f"خطا در ایجاد: {e}")
+        await message.answer(f"⚠️ خطا در ایجاد: {e}")
 
 
 @router.message(Command("admin_delete"))
 async def admin_delete(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split(maxsplit=1) if message.text else []
     if len(parts) != 2:
@@ -69,15 +69,15 @@ async def admin_delete(message: Message) -> None:
     await message.answer(f"حذف کاربر {username}...")
     try:
         await ops.delete_user(username)
-        await message.answer("حذف شد.")
+        await message.answer("✅ حذف شد.")
     except Exception as e:
-        await message.answer(f"خطا در حذف: {e}")
+        await message.answer(f"⚠️ خطا در حذف: {e}")
 
 
 @router.message(Command("admin_reset"))
 async def admin_reset(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split(maxsplit=1) if message.text else []
     if len(parts) != 2:
@@ -86,15 +86,15 @@ async def admin_reset(message: Message) -> None:
     username = parts[1].strip()
     try:
         await ops.reset_user(username)
-        await message.answer("reset انجام شد.")
+        await message.answer("✅ Reset انجام شد.")
     except Exception as e:
-        await message.answer(f"خطا در reset: {e}")
+        await message.answer(f"⚠️ خطا در reset: {e}")
 
 
 @router.message(Command("admin_revoke"))
 async def admin_revoke(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split(maxsplit=1) if message.text else []
     if len(parts) != 2:
@@ -103,15 +103,15 @@ async def admin_revoke(message: Message) -> None:
     username = parts[1].strip()
     try:
         await ops.revoke_sub(username)
-        await message.answer("revoke_sub انجام شد.")
+        await message.answer("✅ revoke_sub انجام شد.")
     except Exception as e:
-        await message.answer(f"خطا در revoke: {e}")
+        await message.answer(f"⚠️ خطا در revoke: {e}")
 
 
 @router.message(Command("admin_set"))
 async def admin_set(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split()
     if len(parts) != 4:
@@ -122,20 +122,20 @@ async def admin_set(message: Message) -> None:
         gb = float(parts[2])
         days = int(parts[3])
     except ValueError:
-        await message.answer("مقادیر GB و DAYS نامعتبر است.")
+        await message.answer("⚠️ مقادیر GB و DAYS نامعتبر است.")
         return
     await message.answer(f"تنظیم محدودیت برای {username}: {gb}GB / {days}d ...")
     try:
         await ops.update_user_limits(username, gb, days)
-        await message.answer("اعمال شد.")
+        await message.answer("✅ اعمال شد.")
     except Exception as e:
-        await message.answer(f"خطا در admin_set: {e}")
+        await message.answer(f"⚠️ خطا در admin_set: {e}")
 
 
 @router.message(Command("admin_get"))
 async def admin_get(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split(maxsplit=1) if message.text else []
     if len(parts) != 2:
@@ -148,13 +148,13 @@ async def admin_get(message: Message) -> None:
         if info.get("subscription_url"):
             await message.answer(info["subscription_url"])
     except Exception as e:
-        await message.answer(f"خطا در admin_get: {e}")
+        await message.answer(f"⚠️ خطا در admin_get: {e}")
 
 
 @router.message(Command("admin_status"))
 async def admin_status(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split()
     if len(parts) != 3:
@@ -164,15 +164,15 @@ async def admin_status(message: Message) -> None:
     status = parts[2].strip()
     try:
         await ops.set_status(username, status)
-        await message.answer("اعمال شد.")
+        await message.answer("✅ اعمال شد.")
     except Exception as e:
-        await message.answer(f"خطا در admin_status: {e}")
+        await message.answer(f"⚠️ خطا در admin_status: {e}")
 
 
 @router.message(Command("admin_addgb"))
 async def admin_addgb(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split()
     if len(parts) != 3:
@@ -182,19 +182,19 @@ async def admin_addgb(message: Message) -> None:
     try:
         gb = float(parts[2])
     except ValueError:
-        await message.answer("مقدار GB نامعتبر است.")
+        await message.answer("⚠️ مقدار GB نامعتبر است.")
         return
     try:
         await ops.add_data_gb(username, gb)
-        await message.answer("اعمال شد.")
+        await message.answer("✅ اعمال شد.")
     except Exception as e:
-        await message.answer(f"خطا در admin_addgb: {e}")
+        await message.answer(f"⚠️ خطا در admin_addgb: {e}")
 
 
 @router.message(Command("admin_extend"))
 async def admin_extend(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split()
     if len(parts) != 3:
@@ -204,43 +204,43 @@ async def admin_extend(message: Message) -> None:
     try:
         days = int(parts[2])
     except ValueError:
-        await message.answer("مقدار DAYS نامعتبر است.")
+        await message.answer("⚠️ مقدار DAYS نامعتبر است.")
         return
     try:
         await ops.extend_expire(username, days)
-        await message.answer("اعمال شد.")
+        await message.answer("✅ اعمال شد.")
     except Exception as e:
-        await message.answer(f"خطا در admin_extend: {e}")
+        await message.answer(f"⚠️ خطا در admin_extend: {e}")
 
 
 @router.message(Command("admin_list_expired"))
 async def admin_list_expired(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     try:
         rows = await ops.list_expired()
         if not rows:
-            await message.answer("موردی یافت نشد.")
+            await message.answer("ℹ️ موردی یافت نشد.")
             return
         lines = []
         for r in rows[:20]:
             lines.append(f"- {r.get('username')} | status={r.get('status')} | expire={r.get('expire')}")
-        await message.answer("Expired users (first 20):\n" + "\n".join(lines))
+        await message.answer("ℹ️ Expired users (first 20):\n" + "\n".join(lines))
     except Exception as e:
-        await message.answer(f"خطا در admin_list_expired: {e}")
+        await message.answer(f"⚠️ خطا در admin_list_expired: {e}")
 
 
 @router.message(Command("admin_delete_expired"))
 async def admin_delete_expired(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     try:
         res = await ops.delete_expired()
-        await message.answer(f"Deleted expired: {res}")
+        await message.answer(f"✅ Deleted expired: {res}")
     except Exception as e:
-        await message.answer(f"خطا در admin_delete_expired: {e}")
+        await message.answer(f"⚠️ خطا در admin_delete_expired: {e}")
 
 
 # ========================
@@ -266,13 +266,13 @@ def _fmt_plan_line(p: Plan) -> str:
 async def admin_show_plans_menu(message: Message, page: int = 1, requester_id: int | None = None) -> None:
     uid = requester_id or (message.from_user.id if message.from_user else None)
     if not (uid and await has_capability_async(uid, CAP_PLANS_MANAGE)):
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     async with session_scope() as session:
         rows = (await session.execute(select(Plan).order_by(Plan.template_id))).scalars().all()
     if not rows:
         kb_empty = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="➕ ایجاد پلن جدید", callback_data="aplans:create:1")]])
-        await message.answer("هیچ پلنی ثبت نشده است. از «➕ ایجاد پلن جدید» استفاده کنید یا از همگام‌سازی Marzban بهره ببرید.", reply_markup=kb_empty)
+        await message.answer("ℹ️ هیچ پلنی ثبت نشده است. از «➕ ایجاد پلن جدید» استفاده کنید یا از همگام‌سازی Marzban بهره ببرید.", reply_markup=kb_empty)
         return
     total = len(rows)
     pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
@@ -310,7 +310,7 @@ async def _btn_admin_plans(message: Message) -> None:
 @router.callback_query(F.data.startswith("aplans:page:"))
 async def cb_aplans_page(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         page = int(cb.data.split(":")[2])
@@ -323,41 +323,41 @@ async def cb_aplans_page(cb: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("aplans:toggle:"))
 async def cb_aplans_toggle(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_TOGGLE_ACTIVE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         _, _, tpl, page = cb.data.split(":")
         tpl_id = int(tpl)
         page_num = int(page)
     except Exception:
-        await cb.answer("شناسه نامعتبر", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     async with session_scope() as session:
         row = await session.scalar(select(Plan).where(Plan.template_id == tpl_id))
         if not row:
-            await cb.answer("پلن یافت نشد", show_alert=True)
+            await cb.answer("⚠️ پلن یافت نشد", show_alert=True)
             return
         row.is_active = not bool(row.is_active)
         await session.commit()
     if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
         await admin_show_plans_menu(cb.message, page=page_num, requester_id=cb.from_user.id)
-    await cb.answer("اعمال شد")
+    await cb.answer("✅ اعمال شد")
 
 
 @router.callback_query(F.data.startswith("aplans:setprice:"))
 async def cb_aplans_setprice(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_SET_PRICE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         _, _, tpl, page = cb.data.split(":")
         tpl_id = int(tpl)
         page_num = int(page)
     except Exception:
-        await cb.answer("شناسه نامعتبر", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     _APLANS_PRICE_INTENT[cb.from_user.id] = (tpl_id, page_num)
-    await cb.message.answer("مبلغ جدید را به تومان ارسال کنید (مثلاً 150000 برای ۱۵۰ هزار تومان)")
+    await cb.message.answer("💵 مبلغ جدید را به تومان ارسال کنید (مثلاً 150000 برای ۱۵۰ هزار تومان)")
     await cb.answer()
 
 
@@ -372,17 +372,17 @@ async def admin_plan_price_input(message: Message) -> None:
         if toman <= 0:
             raise ValueError
     except Exception:
-        await message.answer("مبلغ نامعتبر است. دوباره ارسال کنید یا عملیات را از ابتدا انجام دهید.")
+        await message.answer("⚠️ مبلغ نامعتبر است. دوباره ارسال کنید یا عملیات را از ابتدا انجام دهید.")
         return
     irr = toman * 10
     async with session_scope() as session:
         row = await session.scalar(select(Plan).where(Plan.template_id == tpl_id))
         if not row:
-            await message.answer("پلن یافت نشد.")
+            await message.answer("⚠️ پلن یافت نشد.")
             return
         row.price = irr
         await session.commit()
-    await message.answer(f"قیمت پلن تنظیم شد: {toman:,} تومان")
+    await message.answer(f"✅ قیمت پلن تنظیم شد: {toman:,} تومان")
     if await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE):
         await admin_show_plans_menu(message, page=page_num, requester_id=message.from_user.id)
 
@@ -391,7 +391,7 @@ async def admin_plan_price_input(message: Message) -> None:
 @router.callback_query(F.data.startswith("aplans:create:"))
 async def cb_aplans_create(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_CREATE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         page_num = int(cb.data.split(":")[2])
@@ -408,18 +408,18 @@ async def admin_plan_create_steps(message: Message) -> None:
     # Capability check on every step
     if not await has_capability_async(uid, CAP_PLANS_CREATE):
         _APLANS_CREATE_INTENT.pop(uid, None)
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     ctx = _APLANS_CREATE_INTENT[uid]
     step = ctx.get("step")
     if step == "title":
         title = message.text.strip()
         if not title:
-            await message.answer("عنوان نامعتبر است. دوباره ارسال کنید.")
+            await message.answer("⚠️ عنوان نامعتبر است. دوباره ارسال کنید.")
             return
         ctx["title"] = title
         ctx["step"] = "gb"
-        await message.answer("حجم را به گیگابایت ارسال کنید (عدد صحیح؛ 0 برای نامحدود)")
+        await message.answer("📦 حجم را به گیگابایت ارسال کنید (عدد صحیح؛ 0 برای نامحدود)")
         return
     if step == "gb":
         try:
@@ -427,11 +427,11 @@ async def admin_plan_create_steps(message: Message) -> None:
             if gb < 0:
                 raise ValueError
         except Exception:
-            await message.answer("مقدار حجم نامعتبر است. یک عدد صحیح یا 0 ارسال کنید.")
+            await message.answer("⚠️ مقدار حجم نامعتبر است. یک عدد صحیح یا 0 ارسال کنید.")
             return
         ctx["gb"] = gb
         ctx["step"] = "days"
-        await message.answer("مدت را به روز ارسال کنید (عدد صحیح؛ 0 برای بدون محدودیت)")
+        await message.answer("⏳ مدت را به روز ارسال کنید (عدد صحیح؛ 0 برای بدون محدودیت)")
         return
     if step == "days":
         try:
@@ -439,11 +439,11 @@ async def admin_plan_create_steps(message: Message) -> None:
             if days < 0:
                 raise ValueError
         except Exception:
-            await message.answer("مقدار مدت نامعتبر است. یک عدد صحیح یا 0 ارسال کنید.")
+            await message.answer("⚠️ مقدار مدت نامعتبر است. یک عدد صحیح یا 0 ارسال کنید.")
             return
         ctx["days"] = days
         ctx["step"] = "price"
-        await message.answer("قیمت را به تومان ارسال کنید (عدد صحیح؛ مثلاً 150000)")
+        await message.answer("💵 قیمت را به تومان ارسال کنید (عدد صحیح؛ مثلاً 150000)")
         return
     if step == "price":
         try:
@@ -451,7 +451,7 @@ async def admin_plan_create_steps(message: Message) -> None:
             if tmn <= 0:
                 raise ValueError
         except Exception:
-            await message.answer("مبلغ نامعتبر است. یک عدد صحیح ارسال کنید.")
+            await message.answer("⚠️ مبلغ نامعتبر است. یک عدد صحیح ارسال کنید.")
             return
         ctx["price_tmn"] = tmn
         # Create record
@@ -478,7 +478,7 @@ async def admin_plan_create_steps(message: Message) -> None:
             session.add(p)
             await session.commit()
         _APLANS_CREATE_INTENT.pop(uid, None)
-        await message.answer("پلن جدید ایجاد شد.")
+        await message.answer("✅ پلن جدید ایجاد شد.")
         await admin_show_plans_menu(message, page=page, requester_id=message.from_user.id if message.from_user else None)
         return
 
@@ -487,14 +487,14 @@ async def admin_plan_create_steps(message: Message) -> None:
 @router.callback_query(F.data.startswith("aplans:edit:"))
 async def cb_aplans_edit(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_EDIT)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         _, _, tpl, page = cb.data.split(":")
         tpl_id = int(tpl)
         page_num = int(page)
     except Exception:
-        await cb.answer("شناسه نامعتبر", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="عنوان", callback_data=f"aplans:editfield:title:{tpl_id}:{page_num}")],
@@ -502,21 +502,21 @@ async def cb_aplans_edit(cb: CallbackQuery) -> None:
         [InlineKeyboardButton(text="مدت (روز)", callback_data=f"aplans:editfield:days:{tpl_id}:{page_num}")],
         [InlineKeyboardButton(text="قیمت (تومان)", callback_data=f"aplans:editfield:price:{tpl_id}:{page_num}")],
     ])
-    await cb.message.answer("کدام فیلد را می‌خواهید ویرایش کنید؟", reply_markup=kb)
+    await cb.message.answer("✏️ کدام فیلد را می‌خواهید ویرایش کنید؟", reply_markup=kb)
     await cb.answer()
 
 
 @router.callback_query(F.data.startswith("aplans:editfield:"))
 async def cb_aplans_edit_field(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_EDIT)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         _, _, field, tpl, page = cb.data.split(":")
         tpl_id = int(tpl)
         page_num = int(page)
     except Exception:
-        await cb.answer("شناسه نامعتبر", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     _APLANS_FIELD_INTENT[cb.from_user.id] = (field, tpl_id, page_num)
     prompts = {
@@ -534,13 +534,13 @@ async def admin_plan_edit_steps(message: Message) -> None:
     uid = message.from_user.id if message.from_user else None
     if not await has_capability_async(uid, CAP_PLANS_EDIT):
         _APLANS_FIELD_INTENT.pop(uid, None)
-        await message.answer("شما دسترسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     field, tpl_id, page_num = _APLANS_FIELD_INTENT.pop(uid)
     async with session_scope() as session:
         row = await session.scalar(select(Plan).where(Plan.template_id == tpl_id))
         if not row:
-            await message.answer("پلن یافت نشد.")
+            await message.answer("⚠️ پلن یافت نشد.")
             return
         try:
             if field == "title":
@@ -564,13 +564,13 @@ async def admin_plan_edit_steps(message: Message) -> None:
                     raise ValueError
                 row.price = tmn * 10
             else:
-                await message.answer("فیلد نامعتبر است.")
+                await message.answer("⚠️ فیلد نامعتبر است.")
                 return
             await session.commit()
         except Exception:
-            await message.answer("ورودی نامعتبر است. عملیات لغو شد.")
+            await message.answer("⚠️ ورودی نامعتبر است. عملیات لغو شد.")
             return
-    await message.answer("ویرایش انجام شد.")
+    await message.answer("✅ ویرایش انجام شد.")
     if await has_capability_async(message.from_user.id, CAP_PLANS_MANAGE):
         await admin_show_plans_menu(message, page=page_num, requester_id=message.from_user.id)
 
@@ -578,35 +578,35 @@ async def admin_plan_edit_steps(message: Message) -> None:
 @router.callback_query(F.data.startswith("aplans:delete:"))
 async def cb_aplans_delete(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_DELETE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         _, _, tpl, page = cb.data.split(":")
         tpl_id = int(tpl)
         page_num = int(page)
     except Exception:
-        await cb.answer("شناسه نامعتبر", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🧹 حذف همراه با سفارش‌ها", callback_data=f"aplans:delconf:force:{tpl_id}:{page_num}")],
         [InlineKeyboardButton(text="🚫 فقط غیرفعال‌سازی", callback_data=f"aplans:disable:{tpl_id}:{page_num}")],
         [InlineKeyboardButton(text="خیر، انصراف", callback_data=f"aplans:delconf:no:{tpl_id}:{page_num}")],
     ])
-    await cb.message.answer("آیا از حذف این پلن مطمئن هستید؟", reply_markup=kb)
+    await cb.message.answer("🧹 آیا از حذف این پلن مطمئن هستید؟", reply_markup=kb)
     await cb.answer()
 
 
 @router.callback_query(F.data.startswith("aplans:delconf:"))
 async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_DELETE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         _, _, decision, tpl, page = cb.data.split(":")
         tpl_id = int(tpl)
         page_num = int(page)
     except Exception:
-        await cb.answer("شناسه نامعتبر", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     if decision == "no":
         try:
@@ -618,7 +618,7 @@ async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
     async with session_scope() as session:
         row = await session.scalar(select(Plan).where(Plan.template_id == tpl_id))
         if not row:
-            await cb.answer("پلن یافت نشد", show_alert=True)
+            await cb.answer("⚠️ پلن یافت نشد", show_alert=True)
             return
         # Decouple orders from plan: nullify plan_id on related orders, then delete plan
         await session.execute(
@@ -632,25 +632,25 @@ async def cb_aplans_del_confirm(cb: CallbackQuery) -> None:
         pass
     if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
         await admin_show_plans_menu(cb.message, page=page_num, requester_id=cb.from_user.id)
-    await cb.answer("حذف شد")
+    await cb.answer("✅ حذف شد")
 
 
 @router.callback_query(F.data.startswith("aplans:disable:"))
 async def cb_aplans_disable(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_TOGGLE_ACTIVE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         _, _, tpl, page = cb.data.split(":")
         tpl_id = int(tpl)
         page_num = int(page)
     except Exception:
-        await cb.answer("شناسه نامعتبر", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     async with session_scope() as session:
         row = await session.scalar(select(Plan).where(Plan.template_id == tpl_id))
         if not row:
-            await cb.answer("پلن یافت نشد", show_alert=True)
+            await cb.answer("⚠️ پلن یافت نشد", show_alert=True)
             return
         row.is_active = False
         await session.commit()
@@ -660,25 +660,25 @@ async def cb_aplans_disable(cb: CallbackQuery) -> None:
         pass
     if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
         await admin_show_plans_menu(cb.message, page=page_num, requester_id=cb.from_user.id)
-    await cb.answer("غیرفعال شد")
+    await cb.answer("✅ غیرفعال شد")
 
 
 @router.callback_query(F.data.startswith("aplans:delconf:force:"))
 async def cb_aplans_del_force(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_PLANS_DELETE)):
-        await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
+        await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
         _, _, _, tpl, page = cb.data.split(":")
         tpl_id = int(tpl)
         page_num = int(page)
     except Exception:
-        await cb.answer("شناسه نامعتبر", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     async with session_scope() as session:
         plan = await session.scalar(select(Plan).where(Plan.template_id == tpl_id))
         if not plan:
-            await cb.answer("پلن یافت نشد", show_alert=True)
+            await cb.answer("⚠️ پلن یافت نشد", show_alert=True)
             return
         # Decouple orders instead of deleting them: set plan_id to NULL then delete plan
         await session.execute(
@@ -692,4 +692,4 @@ async def cb_aplans_del_force(cb: CallbackQuery) -> None:
         pass
     if await has_capability_async(cb.from_user.id, CAP_PLANS_MANAGE):
         await admin_show_plans_menu(cb.message, page=page_num, requester_id=cb.from_user.id)
-    await cb.answer("حذف شد")
+    await cb.answer("✅ حذف شد")
