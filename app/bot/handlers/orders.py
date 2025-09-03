@@ -177,7 +177,7 @@ async def cb_order_attach_replace(cb: CallbackQuery) -> None:
     try:
         order_id = int(cb.data.split(":")[-1]) if cb.data else 0
     except Exception:
-        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     kb = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="تایید جایگزینی", callback_data=f"ord:attach:confirm_replace:{order_id}")]]
@@ -194,7 +194,7 @@ async def cb_order_attach_confirm_replace(cb: CallbackQuery) -> None:
     try:
         order_id = int(cb.data.split(":")[-1]) if cb.data else 0
     except Exception:
-        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     if not cb.from_user:
         await cb.answer()
@@ -221,7 +221,7 @@ async def cb_order_attach_confirm_replace(cb: CallbackQuery) -> None:
         "رسید قبلی حذف شد. لطفاً عکس/فایل را با کپشن زیر ارسال کنید:\n"
         f"attach {order_id} <یادداشت اختیاری>"
     )
-    await cb.answer("Cleared")
+    await cb.answer("✅ پاک شد")
 
 
 @router.callback_query(F.data.startswith("ord:attach:") & (~F.data.contains(":replace:")) & (~F.data.contains(":confirm_replace:")))
@@ -229,7 +229,7 @@ async def cb_order_attach(cb: CallbackQuery) -> None:
     try:
         order_id = int(cb.data.split(":")[2]) if cb.data else 0
     except Exception:
-        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        await cb.answer("⛔️ شناسه نامعتبر است", show_alert=True)
         return
     await cb.message.answer(
         "برای ثبت رسید فقط عکس/فایل ارسال کنید و از کپشن زیر استفاده کنید:\n"
@@ -264,7 +264,7 @@ async def handle_attach_media(message: Message) -> None:
             return
         file_id = message.document.file_id
     if not file_id:
-        await message.answer("فقط عکس یا فایل را ارسال کنید.")
+        await message.answer("ℹ️ فقط عکس یا فایل را ارسال کنید.")
         return
     tg_id = message.from_user.id
     async with session_scope() as session:
@@ -276,7 +276,7 @@ async def handle_attach_media(message: Message) -> None:
         )
         row = (await session.execute(stmt)).first()
         if not row:
-            await message.answer("سفارش یافت نشد.")
+            await message.answer("⚠️ سفارش یافت نشد.")
             return
         order, user, plan = row
         if order.receipt_file_path:
