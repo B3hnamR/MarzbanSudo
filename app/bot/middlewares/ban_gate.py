@@ -107,16 +107,29 @@ class BanGateMiddleware(BaseMiddleware):
                 # ignore non-message when capturing
                 return None
 
-        # Handle appeal:start callback
-        if isinstance(event, CallbackQuery) and (event.data or "").strip() == "appeal:start" and status == "none":
-            _APPEAL_CAPTURE[tg_id] = True
+        # Handle appeal:* callbacks robustly
+        if isinstance(event, CallbackQuery):
+            cb_data = (event.data or "").strip()
             try:
-                logger.info("ban_gate: appeal:start received", extra={"extra": {"tg_id": tg_id}})
+                logger.info("ban_gate: callback received", extra={"extra": {"tg_id": tg_id, "data": cb_data}})
             except Exception:
                 pass
-            await event.message.answer("لطفاً توضیح خود را درباره رفع بن در یک پیام متنی ارسال کنید (تنها یک‌بار).")
-            await event.answer()
-            return None
+            if cb_data.startswith("appeal:"):
+                if status == "none":
+                    _APPEAL_CAPTURE[tg_id] = True
+                    try:
+                        logger.info("ban_gate: appeal:start received", extra={"extra": {"tg_id": tg_id}})
+                    except Exception:
+                        pass
+                    await event.message.answer("لطفاً توضیح خود را درباره رفع بن در یک پیام متنی ارسال کنید (تنها یک‌بار).")
+                    await event.answer()
+                    return None
+                elif status == "pending":
+                    await event.answer("در دست بررسی", show_alert=True)
+                    return None
+                elif status == "denied":
+                    await event.answer("درخواست شما رد شده است.", show_alert=True)
+                    return None
 
         # Generic banned notices
         if status == "none":
