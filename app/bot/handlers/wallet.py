@@ -18,6 +18,20 @@ from app.utils.intent_store import set_intent_json, get_intent_json, clear_inten
 
 router = Router()
 
+# Helpers
+_DIGIT_MAP = str.maketrans(
+    {
+        "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
+        "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
+        ",": "", "٬": "", " ": "", "\u200f": "", "\u200e": "",
+        "٫": "."
+    }
+)
+
+def _normalize_amount(txt: str) -> str:
+    # Convert Persian digits to ASCII, remove thousands separators/spaces
+    return (txt or "").strip().translate(_DIGIT_MAP)
+
 # ===== Admin Manual Wallet Add (UI flow) =====
 # Per-admin state: { admin_id: { 'stage': 'await_ref'|'await_unit'|'await_amount',
 #                                'user_id': int|None, 'unit': 'IRR'|'TMN'|None } }
@@ -100,7 +114,7 @@ async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(F.text.regexp(r"^\d+(?:[\.,]\d+)?$"))
+@router.message(F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]*$"))
 async def admin_wallet_manual_add_amount(message: Message) -> None:
     admin_id = message.from_user.id
     payload = await get_intent_json(f"INTENT:WADM:{admin_id}")
@@ -112,7 +126,9 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     try:
-        val = Decimal(message.text.strip())
+        raw = _normalize_amount(message.text)
+        # Allow integer or decimal; convert to Decimal
+        val = Decimal(raw)
         if val <= 0:
             raise ValueError
     except Exception:
@@ -326,7 +342,7 @@ async def admin_wallet_limits_numeric_input(message: Message) -> None:
         await admin_wallet_settings_menu(message)
         return
 
-@router.message(F.text.regexp(r"^\d{1,10}$"))
+@router.message(F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]{0,13}$"))
 async def handle_wallet_custom_amount(message: Message) -> None:
     if not message.from_user:
         return
@@ -384,7 +400,8 @@ async def handle_wallet_custom_amount(message: Message) -> None:
     if not payload or str(payload.get("amount")) != "-1":
         return
     try:
-        toman = Decimal(message.text)
+        raw = _normalize_amount(message.text)
+        toman = Decimal(raw)
         if toman <= 0:
             raise ValueError
     except Exception:
@@ -767,8 +784,10 @@ async def admin_wallet_settings_menu(message: Message) -> None:
         _am._APLANS_CREATE_INTENT.pop(uid, None)
         _am._APLANS_FIELD_INTENT.pop(uid, None)
         _am._APLANS_PRICE_INTENT.pop(uid, None)
-        # Also clear manual wallet add intent to prevent cross-capture
+        # Also clear manual wallet add intent (in-memory and DB) to prevent cross-capture
         _WALLET_MANUAL_ADD_INTENT.pop(uid, None)
+        from app.utils.intent_store import clear_intent as _clear
+        await _clear(f"INTENT:WADM:{uid}")
     except Exception:
         pass
     async with session_scope() as session:

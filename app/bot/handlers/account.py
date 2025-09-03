@@ -140,9 +140,29 @@ async def handle_account(message: Message) -> None:
         except httpx.HTTPStatusError as e:
             status = e.response.status_code if e.response is not None else None
             if status == 404:
-                await message.answer(
-                    "اکانت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید."
-                )
+                # Render basic profile summary instead of plain 404 text
+                tg_id = message.from_user.id
+                username_default = tg_username(tg_id)
+                reg_date_txt = "—"
+                orders_count = 0
+                async with session_scope() as session:
+                    user = await session.scalar(select(User).where(User.telegram_id == tg_id))
+                    if user:
+                        reg_date_txt = user.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC"
+                        res = await session.execute(select(func.count(Order.id)).where(Order.user_id == user.id))
+                        orders_count = int(res.scalar() or 0)
+                        if getattr(user, "marzban_username", None):
+                            username_default = user.marzban_username
+                lines = [
+                    "🔎 اطلاعات حساب کاربری شما:",
+                    f"👤 نام کاربری (پنل): {username_default}",
+                    f"🆔 شناسه تلگرام: {tg_id}",
+                    f"🗓️ تاریخ ثبت‌نام: {reg_date_txt}",
+                    f"🧾 تعداد خریدها: {orders_count}",
+                    "",
+                    "اکانت شما در پنل یافت نشد. برای ساخت اکانت جدید یکی از پلن‌ها را خریداری کنید یا در صورت فعال بودن، از تریال استفاده کنید.",
+                ]
+                await message.answer("\n".join(lines))
             else:
                 await message.answer("خطا در دریافت اطلاعات اکانت. لطفاً بعداً تلاش کنید.")
         except Exception:
