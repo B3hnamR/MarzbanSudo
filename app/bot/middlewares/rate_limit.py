@@ -20,6 +20,8 @@ class RateLimitMiddleware(BaseMiddleware):
         self.window = 60.0
         self.history: Dict[int, Deque[float]] = defaultdict(deque)
         self.notify_text = notify_text or "محدودیت نرخ پیام: لطفاً کمی بعد تلاش کنید."
+        # Periodic cleanup ticker to bound memory usage for idle users
+        self._ticks = 0
 
     async def __call__(
         self,
@@ -27,6 +29,18 @@ class RateLimitMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
+        # Periodic cleanup of stale rate history (every ~500 updates)
+        try:
+            self._ticks += 1
+            if (self._ticks % 500) == 0:
+                cutoff = time.monotonic() - self.window * 2
+                for k, dq in list(self.history.items()):
+                    while dq and (cutoff - dq[0]) > 0:
+                        dq.popleft()
+                    if not dq:
+                        self.history.pop(k, None)
+        except Exception:
+            pass
         # Admins are exempt from rate limiting
         uid_admin = None
         if isinstance(event, Message) and event.from_user:
