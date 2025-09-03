@@ -92,7 +92,7 @@ async def main() -> None:
     dp.callback_query.middleware(rate_limiter)
 
     dp.include_router(router)
-        dp.include_router(start_handlers.router)
+    dp.include_router(start_handlers.router)
     dp.include_router(plans_handlers.router)
     dp.include_router(account_handlers.router)
     dp.include_router(admin_handlers.router)
