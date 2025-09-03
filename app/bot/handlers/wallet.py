@@ -65,7 +65,7 @@ async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
         pass
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and isinstance(getattr(m, "text", None), str))
+@router.message(F.text.regexp(r"^(?:\d{5,}|[a-z0-9_]{3,})$"))
 async def admin_wallet_manual_add_ref(message: Message) -> None:
     admin_id = message.from_user.id
     # Only handle when admin has an active manual-add intent at 'await_ref' stage
@@ -174,7 +174,7 @@ async def admin_wallet_manual_add_amount(message: Message) -> None:
     await message.answer(f"انجام شد. موجودی جدید {target_username}: {new_tmn:,} تومان")
 
 # Fallback: capture arbitrary text for admin amount stage
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and isinstance(getattr(m, "text", None), str))
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and isinstance(getattr(m, "text", None), str) and __import__("re").search(r"\d", m.text or "") is not None)
 async def admin_wallet_manual_add_amount_fallback(message: Message) -> None:
     admin_id = message.from_user.id if message.from_user else None
     if not admin_id:
@@ -675,6 +675,8 @@ async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
     await set_intent_json(f"INTENT:WREJ:{cb.from_user.id}", {"topup_id": topup_id, "ts": datetime.utcnow().isoformat()})
+    # Set in-memory capture flag so the next admin text is captured by reject-with-reason handler only in this state
+    _WALLET_REJECT_REASON_INTENT[cb.from_user.id] = topup_id
     orig_caption = getattr(cb.message, "caption", None)
     orig_text = getattr(cb.message, "text", None)
     content = orig_caption if orig_caption is not None else (orig_text or "")
@@ -687,7 +689,7 @@ async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and isinstance(getattr(m, "text", None), str))
+@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_REJECT_REASON_INTENT.get(m.from_user.id, False) and isinstance(getattr(m, "text", None), str))
 async def admin_wallet_reject_with_reason_text(message: Message) -> None:
     admin_id = message.from_user.id if message.from_user else None
     if not admin_id or not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
@@ -748,6 +750,8 @@ async def admin_wallet_reject_with_reason_text(message: Message) -> None:
         await clear_intent(f"INTENT:WREJCTX:{admin_id}")
     except Exception:
         pass
+    # Clear in-memory capture flag
+    _WALLET_REJECT_REASON_INTENT.pop(admin_id, None)
     await message.answer("رد شد و دلیل به کاربر اطلاع داده شد.")
 
 
