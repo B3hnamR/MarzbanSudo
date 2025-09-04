@@ -219,7 +219,14 @@ async def cb_user_view(cb: CallbackQuery) -> None:
     lines = [header, "", "🧩 سرویس‌ها:"]
     kb_rows: List[List[InlineKeyboardButton]] = []
     is_banned = bool(banned_row and str(banned_row.value).strip().lower() in {"1", "true"})
-    kb_rows.append([InlineKeyboardButton(text=("✅ رفع بن کاربر" if is_banned else "⛔️ بن کاربر (ربات)"), callback_data=f"users:banbot:{uid}")])
+    # Prevent ban button for admin users
+    try:
+        from app.services.security import get_admin_ids
+        is_target_admin = u.telegram_id in set(get_admin_ids())
+    except Exception:
+        is_target_admin = False
+    if not is_target_admin:
+        kb_rows.append([InlineKeyboardButton(text=("✅ رفع بن کاربر" if is_banned else "⛔️ بن کاربر (ربات)"), callback_data=f"users:banbot:{uid}")])
     if svcs:
         for s in svcs:
             lines.append(f"- {s.username} | وضعیت: {s.status}")
@@ -245,10 +252,19 @@ async def cb_user_ban(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("bad id", show_alert=True)
         return
+    # Prevent banning admin users
+    try:
+        from app.services.security import get_admin_ids
+        admin_ids = set(get_admin_ids())
+    except Exception:
+        admin_ids = set()
     async with session_scope() as session:
         u = await session.scalar(select(User).where(User.id == uid))
         if not u:
             await cb.answer("not found", show_alert=True)
+            return
+        if u.telegram_id in admin_ids:
+            await cb.answer("⛔️ امکان بن کردن ادمین وجود ندارد.", show_alert=True)
             return
         new_status = "disabled" if u.status != "disabled" else "active"
         try:
@@ -289,6 +305,14 @@ async def cb_user_banbot(cb: CallbackQuery) -> None:
         if not u:
             await cb.answer("not found", show_alert=True)
             return
+        # Guard: do not allow ban for admin users
+        try:
+            from app.services.security import get_admin_ids
+            if u.telegram_id in set(get_admin_ids()):
+                await cb.answer("⛔️ امکان بن کردن ادمین وجود ندارد.", show_alert=True)
+                return
+        except Exception:
+            pass
         row = await session.scalar(select(Setting).where(Setting.key == f"USER:{u.telegram_id}:BANNED"))
         currently_banned = bool(row and str(row.value).strip().lower() in {"1", "true"})
         # Toggle state

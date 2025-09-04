@@ -116,7 +116,7 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
             return
         await set_intent_json(f"INTENT:WADM:{admin_id}", {"stage": "await_unit", "user_id": int(user.id), "unit": None, "ts": datetime.utcnow().isoformat()})
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="ورود مبلغ به تومان", callback_data="walletadm:add:unit:TMN"), InlineKeyboardButton(text="ورود مبلغ به ریال", callback_data="walletadm:add:unit:IRR")]])
-    await message.answer("واحد مبلغ را انتخاب کنید:", reply_markup=kb)
+    await message.answer("💱 واحد مبلغ را انتخاب کنید:", reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("walletadm:add:unit:"))
@@ -143,7 +143,7 @@ async def cb_admin_wallet_manual_add_unit(cb: CallbackQuery) -> None:
     await set_intent_json(f"INTENT:WADM:{uid}", {"stage": "await_amount", "user_id": payload.get("user_id"), "unit": unit, "ts": datetime.utcnow().isoformat()})
     # Reflect stage in in-memory flag to guide handler routing
     _WALLET_MANUAL_ADD_INTENT[uid] = {**_WALLET_MANUAL_ADD_INTENT.get(uid, {"active": True}), "active": True, "stage": "await_amount"}
-    await cb.message.answer("مبلغ را به صورت عدد ارسال کنید.")
+    await cb.message.answer("🔢 مبلغ را به صورت عدد ارسال کنید.")
     await cb.answer()
 
 
@@ -512,7 +512,7 @@ async def handle_wallet_custom_amount(message: Message) -> None:
         max_irr = await _get_max_topup(session)
     if rial < min_irr:
         await message.answer(
-            f"حداقل مبلغ شارژ {int(min_irr/Decimal('10')):,} تومان است. لطفاً مبلغ بیشتری وارد کنید."
+            f"⚠️ حداقل مبلغ شارژ {int(min_irr/Decimal('10')):,} تومان است. لطفاً مبلغ بیشتری وارد کنید."
         )
         await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": "-1", "ts": datetime.utcnow().isoformat()})
         return
@@ -1142,7 +1142,7 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
         await log_audit(session, actor="admin", action="wallet_topup_rejected", target_type="wallet_topup", target_id=topup.id, meta=str({"admin_id": admin_id}))
         await session.commit()
     try:
-        await cb.message.bot.send_message(chat_id=user.telegram_id, text=f"❌ درخواست شارژ شما ��د شد.\n💵 مبلغ: {int((topup.amount or 0)/10):,} تومان")
+        await cb.message.bot.send_message(chat_id=user.telegram_id, text=f"❌ درخواست شارژ شما رد شد.\n💵 مبلغ: {int((topup.amount or 0)/10):,} تومان")
     except Exception:
         pass
     try:
