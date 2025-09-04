@@ -94,7 +94,15 @@ async def _send_recent_orders_page(target, page: int) -> None:
         title = p.title if p else (o.plan_title or "-")
         amount_str = _amount_label(o.amount, o.currency)
         ts = o.created_at.strftime("%Y-%m-%d %H:%M") if getattr(o, "created_at", None) else "-"
-        lines.append(f"{_status_emoji(o.status)} #{o.id} • {title} • {amount_str} • {ts} • 👤 {u.marzban_username} (tg:{u.telegram_id})")
+        block = [
+            f"{_status_emoji(o.status)} سفارش #{o.id}",
+            f"🧩 پلن: {title}",
+            f"💵 مبلغ: {amount_str}",
+            f"🗓️ زمان: {ts}",
+            f"👤 کاربر: {u.marzban_username} (tg:{u.telegram_id})",
+        ]
+        lines.append("\n".join(block))
+        lines.append("")  # blank line between orders
     # Nav buttons
     nav = []
     if page > 1:
