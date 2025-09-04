@@ -23,7 +23,7 @@ router = Router()
 import logging
 logger = logging.getLogger(__name__)
 
-PAGE_SIZE_RECENT = 10
+PAGE_SIZE_RECENT = 5
 
 
 def _status_emoji(st: str) -> str:

@@ -70,13 +70,19 @@ async def _send_plans_page(message: Message, page: int) -> None:
         page = max(1, min(page, pages))
         start = (page - 1) * PAGE_SIZE
         subset = all_plans[start:start + PAGE_SIZE]
-        lines = ["🛍️ پلن‌های موجود • صفحه {}/{}".format(page, pages)]
+        lines = [
+            "🔥 بهترین سرویس‌ها با کیفیت پایدار و پشتیبانی سریع",
+            "• تنوع در حجم و مدت برای نیازهای مختلف",
+            "• فعال‌سازی آنی پس از پرداخت",
+            "• مناسب موبایل و دسکتاپ",
+            "",
+            "یکی از پلن‌های زیر را انتخاب کنید:",
+        ]
         buttons = []
         for p in subset:
-            lines.append(_plan_text(p))
             price_irr = Decimal(str(p.price or 0))
             btn_text = (
-                f"🛒 خرید {p.title} — {int(price_irr/Decimal('10')):,} تومان" if price_irr > 0 else f"🛒 خرید {p.title}"
+                f"🛒 خرید سرویس — {int(price_irr/Decimal('10')):,} تومان" if price_irr > 0 else f"🛒 خرید سرویس"
             )
             buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"plan:buy:{p.template_id}")])
         nav = []

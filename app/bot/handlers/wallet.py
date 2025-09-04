@@ -280,7 +280,7 @@ async def admin_wallet_pending_topups(message: Message) -> None:
             )
         ).all()
     if not rows:
-        await message.answer("ℹ️ درخواستی برای بررسی موجود نیست.")
+        await message.answer("ℹ️ هیچ درخواستی برای بررسی موجود نیست.")
         return
     for topup, user in rows:
         tmn = int((Decimal(topup.amount or 0) / Decimal("10")).to_integral_value())

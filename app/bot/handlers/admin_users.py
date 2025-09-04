@@ -46,19 +46,16 @@ async def _menu_summary_text() -> str:
         total_users = (await session.execute(select(func.count(User.id)))).scalar() or 0
         buyers = (await session.execute(select(func.count(distinct(Order.user_id))))).scalar() or 0
         total_orders = (await session.execute(select(func.count(Order.id)))).scalar() or 0
-        active_users = (await session.execute(select(func.count(User.id)).where(User.status == "active"))).scalar() or 0
-        disabled_users = (await session.execute(select(func.count(User.id)).where(User.status == "disabled"))).scalar() or 0
+        # Service-level status counts
+        service_active = (await session.execute(select(func.count(UserService.id)).where(UserService.status == "active"))).scalar() or 0
+        service_disabled = (await session.execute(select(func.count(UserService.id)).where(UserService.status == "disabled"))).scalar() or 0
         pending_topups = (await session.execute(select(func.count(WalletTopUp.id)).where(WalletTopUp.status == "pending"))).scalar() or 0
         approved_topups = (await session.execute(select(func.count(WalletTopUp.id)).where(WalletTopUp.status == "approved"))).scalar() or 0
     lines = [
         "👥 مدیریت کاربران",
-        f"👥 کل کاربران: {int(total_users):,}",
-        f"🛍️ کاربران دارای خرید: {int(buyers):,}",
-        f"📦 مجموع سفارش‌ها: {int(total_orders):,}",
-        f"✅ وضعیت active: {int(active_users):,}",
-        f"🚫 وضعیت disabled: {int(disabled_users):,}",
-        f"💳⏳ درخواست‌های شارژ در انتظار: {int(pending_topups):,}",
-        f"💳✅ شارژهای تاییدشده: {int(approved_topups):,}",
+        f"👥 کل: {int(total_users):,} | 🛍️ خریدار: {int(buyers):,} | 📦 سفارش‌ها: {int(total_orders):,}",
+        f"🔖 وضعیت سرویس‌ها — ✅ فعال: {int(service_active):,} | 🚫 غیرفعال: {int(service_disabled):,}",
+        f"💳 تراکنش‌ها — ⏳ در انتظار: {int(pending_topups):,} | ✅ تایید: {int(approved_topups):,}",
     ]
     return "\n".join(lines)
 
