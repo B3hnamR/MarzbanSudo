@@ -82,7 +82,7 @@ async def _send_plans_page(message: Message, page: int) -> None:
         for p in subset:
             price_irr = Decimal(str(p.price or 0))
             btn_text = (
-                f"🛒 خرید سرویس — {int(price_irr/Decimal('10')):,} تومان" if price_irr > 0 else f"🛒 خرید سرویس"
+                f"🛒 خرید {p.title} — {int(price_irr/Decimal('10')):,} تومان" if price_irr > 0 else f"🛒 خرید {p.title}"
             )
             buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"plan:buy:{p.template_id}")])
         nav = []
