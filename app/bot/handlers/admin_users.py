@@ -15,6 +15,7 @@ from app.db.session import session_scope
 from app.db.models import User, Order, Setting, Plan, WalletTopUp, UserService
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE
 from app.services import marzban_ops as ops
+from app.marzban.client import get_client
 
 router = Router()
 
@@ -1002,7 +1003,7 @@ async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
         )
         session.add(o)
         await session.commit()
-    # Notify user
+    # Notify user + deliver manage buttons and fail-safe QR/configs
     try:
         sub_domain = (await _get_sub_domain())
         msg_lines = [
@@ -1016,6 +1017,62 @@ async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
                 f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
             ]
         await router.bot.send_message(chat_id=u2.telegram_id, text="\n".join(msg_lines))
+        # Fetch latest user info to build delivery
+        links: list[str] = []
+        sub_url = ""
+        token2 = token
+        try:
+            client = await get_client()
+            info2 = await client.get_user(username)
+            links = list(map(str, (info2.get("links") or [])))
+            sub_url = str(info2.get("subscription_url") or "")
+            if not token2 and sub_url:
+                token2 = sub_url.rstrip("/").split("/")[-1]
+        except Exception:
+            links = []
+            sub_url = ""
+        finally:
+            try:
+                await client.aclose()  # type: ignore
+            except Exception:
+                pass
+        # Manage/Copy buttons (service-specific)
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton  # local import to avoid top changes
+        manage_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 مدیریت سرویس", callback_data=f"acct:svc:{usvc.id}"), InlineKeyboardButton(text="📋 کپی همه", callback_data=f"acct:copyall:svc:{usvc.id}")]])
+        # If links exist, send them in chunks; otherwise, at least send QR/subscription URL
+        if links:
+            chunk: list[str] = []
+            size = 0
+            for ln in links:
+                s = str(ln).strip()
+                if not s:
+                    continue
+                entry = ("\n\n" if chunk else "") + s
+                if size + len(entry) > 3500:
+                    await router.bot.send_message(chat_id=u2.telegram_id, text="\n\n".join(chunk))
+                    chunk = [s]
+                    size = len(s)
+                    continue
+                chunk.append(s)
+                size += len(entry)
+            if chunk:
+                await router.bot.send_message(chat_id=u2.telegram_id, text="\n\n".join(chunk), reply_markup=manage_kb)
+        else:
+            # Fail-safe: send QR or subscription URL
+            disp_url = ""
+            if sub_domain and token2:
+                disp_url = f"https://{sub_domain}/sub4me/{token2}/"
+            elif sub_url:
+                disp_url = sub_url
+            if disp_url:
+                qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={disp_url}"
+                try:
+                    await router.bot.send_photo(chat_id=u2.telegram_id, photo=qr_url, caption="🔳 QR اشتراک", reply_markup=manage_kb)
+                except Exception:
+                    await router.bot.send_message(chat_id=u2.telegram_id, text=disp_url, reply_markup=manage_kb)
+            else:
+                # As a last resort, send only manage buttons
+                await router.bot.send_message(chat_id=u2.telegram_id, text="برای مدیریت سرویس از دکمه‌های زیر استفاده کنید.", reply_markup=manage_kb)
     except Exception:
         pass
     return True, ""
