@@ -381,7 +381,7 @@ async def wallet_menu(message: Message) -> None:
 
 @router.callback_query(F.data == "wallet:custom")
 async def cb_wallet_custom(cb: CallbackQuery) -> None:
-    await cb.message.answer("مبلغ دلخواه را به تومان ارسال کنید (مثلاً 76000 برای ۷۶۰۰۰ تومان).")
+    await cb.message.answer("💵 مبلغ دلخواه را به تومان ارسال کنید (مثلاً 76000 برای ۷۶۰۰۰ تومان).")
     # Clear admin manual-add intent for this user (if admin), to avoid text capture conflicts
     try:
         await clear_intent(f"INTENT:WADM:{cb.from_user.id}")
@@ -518,12 +518,12 @@ async def handle_wallet_custom_amount(message: Message) -> None:
         return
     if max_irr is not None and rial > max_irr:
         await message.answer(
-            f"حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است. لطفاً مبلغ کمتری وارد کنید."
+            f"⚠️ حداکثر مبلغ شارژ {int(max_irr/Decimal('10')):,} تومان است. لطفاً مبلغ کمتری وارد کنید."
         )
         await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": "-1", "ts": datetime.utcnow().isoformat()})
         return
     await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": str(int(rial)), "ts": datetime.utcnow().isoformat()})
-    await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس رسید پرداخت را ارسال کنید.")
+    await message.answer(f"✅ مبلغ {int(toman):,} تومان انتخاب شد.\n🧾 لطفاً عکس رسید پرداخت را ارسال کنید.")
 
 
 # Fallback: if user sends arbitrary text while TOPUP intent is active, try to parse amount
@@ -555,7 +555,7 @@ async def handle_wallet_custom_amount_fallback(message: Message) -> None:
         await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": "-1", "ts": datetime.utcnow().isoformat()})
         return
     await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": str(int(rial)), "ts": datetime.utcnow().isoformat()})
-    await message.answer(f"مبلغ {int(toman):,} تومان انتخاب شد. لطفاً عکس رسید پرداخت را ارسال کنید.")
+    await message.answer(f"✅ مبلغ {int(toman):,} تومان انتخاب شد.\n🧾 لطفاً عکس رسید پرداخت را ارسال کنید.")
 
 @router.callback_query(F.data.startswith("wallet:amt:"))
 async def cb_wallet_amount(cb: CallbackQuery) -> None:
@@ -582,7 +582,7 @@ async def cb_wallet_amount(cb: CallbackQuery) -> None:
         return
     await set_intent_json(f"INTENT:TOPUP:{cb.from_user.id}", {"amount": str(int(amount)), "ts": datetime.utcnow().isoformat()})
     await cb.message.answer(
-        f"مبلغ {int(amount/10):,} تومان انتخاب شد.\nلطفاً عکس رسید پرداخت را ارسال کنید (بدون نیاز به متن)."
+        f"✅ مبلغ {int(amount/10):,} تومان انتخاب شد.\n🧾 لطفاً عکس رسید پرداخت را ارسال کنید (بدون نیاز به متن)."
     )
     await cb.answer()
 
@@ -647,12 +647,12 @@ async def handle_wallet_photo(message: Message) -> None:
         max_irr = await _get_max_topup(session)
         if amount < min_irr:
             await message.answer(
-                f"مبلغ انتخاب‌شده کمتر از حداقل مجاز است ({int(min_irr/Decimal('10')):,} تومان). لطفاً از منوی کیف پول دوباره اقدام کنید."
+                f"⚠️ مبلغ انتخاب‌شده کمتر از حداقل مجاز است ({int(min_irr/Decimal('10')):,} تومان). لطفاً از منوی کیف پول دوباره اقدام کنید."
             )
             return
         if max_irr is not None and amount > max_irr:
             await message.answer(
-                f"مبلغ انتخاب‌شده بیشتر از حداکثر مجاز است ({int(max_irr/Decimal('10')):,} تومان). لطفاً از منوی کیف پول دوباره اقدام کنید."
+                f"⚠️ مبلغ انتخاب‌شده بیشتر از حداکثر مجاز است ({int(max_irr/Decimal('10')):,} تومان). لطفاً از منوی کیف پول دوباره اقدام کنید."
             )
             return
         topup = WalletTopUp(
@@ -668,7 +668,7 @@ async def handle_wallet_photo(message: Message) -> None:
         await session.flush()
         await log_audit(session, actor="user", action="wallet_topup_created", target_type="wallet_topup", target_id=topup.id, meta=str({"amount": str(amount)}))
         await session.commit()
-    await message.answer("درخواست شارژ ثبت شد و برای ادمین ارسال گردید.")
+    await message.answer("✅ درخواست شارژ ثبت شد و برای ادمین ارسال گردید.")
     try:
         import logging
         from app.utils.correlation import get_correlation_id
@@ -719,7 +719,7 @@ async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
         f"INTENT:WREJCTX:{cb.from_user.id}",
         {"chat_id": cb.message.chat.id, "message_id": cb.message.message_id, "content": content or "", "kind": kind, "ts": datetime.utcnow().isoformat()},
     )
-    await cb.message.answer("لطفاً دلیل رد درخواست را ارسال کنید (یک پیام متنی).")
+    await cb.message.answer("📝 لطفاً دلیل رد درخواست را ارسال کنید (یک پیام متنی).")
     await cb.answer()
 
 
@@ -761,7 +761,7 @@ async def admin_wallet_reject_with_reason_text(message: Message) -> None:
         user_telegram_id = user.telegram_id
         await session.commit()
     try:
-        await message.bot.send_message(chat_id=user_telegram_id, text=f"درخواست شارژ شما رد شد. دلیل: {reason}")
+        await message.bot.send_message(chat_id=user_telegram_id, text=f"❌ درخواست شارژ شما رد شد.\n📝 دلیل: {reason}")
     except Exception:
         pass
     if ctx:
@@ -800,7 +800,7 @@ async def admin_wallet_reject_with_reason_text(message: Message) -> None:
         pass
     # Clear in-memory capture flag
     _WALLET_REJECT_REASON_INTENT.pop(admin_id, None)
-    await message.answer("رد شد و دلیل به کاربر اطلاع داده شد.")
+    await message.answer("✅ رد شد و دلیل به کاربر اطلاع داده شد.")
 
 
 @router.callback_query(F.data.startswith("wallet:approve:"))
@@ -868,7 +868,7 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
         await session.commit()
     try:
         if user_telegram_id is not None and new_balance_for_msg is not None:
-            await cb.message.bot.send_message(chat_id=user_telegram_id, text=f"شارژ شما تایید شد. موجودی جدید: {new_balance_for_msg:,} تومان")
+            await cb.message.bot.send_message(chat_id=user_telegram_id, text=f"✅💳 شارژ شما تایید شد.\n👛 موجودی جدید: {new_balance_for_msg:,} تومان")
     except Exception:
         pass
     try:
@@ -947,10 +947,10 @@ async def admin_wallet_settings_menu(message: Message) -> None:
     async with session_scope() as session:
         min_irr = await _get_min_topup_value(session)
         max_irr = await _get_max_topup_value(session)
-    header = "تنظیمات کیف پول\n"
-    header += f"حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
-    header += f"حداکثر مبلغ شارژ فعلی: {int(max_irr/Decimal('10')):,} تومان\n" if max_irr else "حداکثر مبلغ شارژ فعلی: بدون سقف\n"
-    text = header + "یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید."
+    header = "💼 تنظیمات کیف پول\n"
+    header += f"💵 حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
+    header += f"📈 حداکثر مبلغ شارژ فعلی: {int(max_irr/Decimal('10')):,} تومان\n" if max_irr else "🚫 حداکثر مبلغ شارژ فعلی: بدون سقف\n"
+    text = header + "🧭 یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید."
     await message.answer(text, reply_markup=_admin_wallet_keyboard(min_irr, max_irr))
 
 
@@ -962,10 +962,10 @@ async def cb_walletadmin_min_refresh(cb: CallbackQuery) -> None:
     async with session_scope() as session:
         min_irr = await _get_min_topup_value(session)
         max_irr = await _get_max_topup_value(session)
-    header = "تنظیمات کیف پول\n"
-    header += f"حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
-    header += f"حداکثر مبلغ شارژ فعلی: {int(max_irr/Decimal('10')):,} تومان\n" if max_irr else "حداکثر مبلغ شارژ فعلی: بدون سقف\n"
-    text = header + "یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید."
+    header = "💼 تنظیمات کیف پول\n"
+    header += f"💵 حداقل مبلغ شارژ فعلی: {int(min_irr/Decimal('10')):,} تومان\n"
+    header += f"📈 حداکثر مبلغ شارژ فعلی: {int(max_irr/Decimal('10')):,} تومان\n" if max_irr else "🚫 حداکثر مبلغ شارژ فعلی: بدون سقف\n"
+    text = header + "🧭 یکی از گزینه‌ها را انتخاب کنید یا مبلغ دلخواه را تعیین کنید."
     try:
         await cb.message.edit_text(text, reply_markup=_admin_wallet_keyboard(min_irr, max_irr))
     except Exception:
@@ -1142,7 +1142,7 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
         await log_audit(session, actor="admin", action="wallet_topup_rejected", target_type="wallet_topup", target_id=topup.id, meta=str({"admin_id": admin_id}))
         await session.commit()
     try:
-        await cb.message.bot.send_message(chat_id=user.telegram_id, text=f"درخواست شارژ شما رد شد. مبلغ: {int((topup.amount or 0)/10):,} تومان")
+        await cb.message.bot.send_message(chat_id=user.telegram_id, text=f"❌ درخواست شارژ شما ��د شد.\n💵 مبلغ: {int((topup.amount or 0)/10):,} تومان")
     except Exception:
         pass
     try:

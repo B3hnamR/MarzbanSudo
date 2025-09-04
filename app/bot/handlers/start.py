@@ -28,7 +28,7 @@ def _is_admin(msg: Message) -> bool:
 def _user_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌ها")],
+            [KeyboardButton(text="🛒 خرید سرویس"), KeyboardButton(text="📦 سفارش‌ها")],
             [KeyboardButton(text="👤 اکانت من"), KeyboardButton(text="💳 کیف پول")],
         ], resize_keyboard=True
     )
@@ -37,7 +37,7 @@ def _user_keyboard() -> ReplyKeyboardMarkup:
 def _admin_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🛒 پلن‌ها"), KeyboardButton(text="📦 سفارش‌های من")],
+            [KeyboardButton(text="🛒 خرید سرویس"), KeyboardButton(text="📦 سفارش‌های من")],
             [KeyboardButton(text="👤 اکانت من"), KeyboardButton(text="💳 کیف پول")],
             [KeyboardButton(text="💳 درخواست‌های شارژ"), KeyboardButton(text="💼 تنظیمات کیف پول")],
             [KeyboardButton(text="⚙️ مدیریت پلن‌ها"), KeyboardButton(text="📦 سفارش‌های اخیر")],
@@ -132,7 +132,7 @@ async def handle_start(message: Message) -> None:
 
 
 # Map non-slash buttons to existing handlers
-@router.message(F.text == "🛒 پلن‌ها")
+@router.message(F.text.in_({"🛒 پلن‌ها", "🛒 خرید سرویس"}))
 async def _btn_plans(message: Message) -> None:
     await plans_handler(message)
 
