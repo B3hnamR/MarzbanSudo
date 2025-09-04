@@ -765,20 +765,34 @@ async def admin_wallet_reject_with_reason_text(message: Message) -> None:
     except Exception:
         pass
     if ctx:
-        chat_id, msg_id, content, kind = ctx
+        # ctx may be a dict (new storage) or a tuple/list (legacy). Handle both safely.
+        try:
+            if isinstance(ctx, (list, tuple)) and len(ctx) >= 4:
+                chat_id, msg_id, content, kind = ctx[:4]
+            else:
+                chat_id = int(ctx.get("chat_id"))
+                msg_id = int(ctx.get("message_id"))
+                content = ctx.get("content") or ""
+                kind = ctx.get("kind") or "text"
+        except Exception:
+            chat_id = None
+            msg_id = None
+            content = ""
+            kind = "text"
         new_content = (content or "")
         append_txt = f"رد شد ❌\nدلیل: {reason}"
         if new_content:
             new_content = new_content + "\n\n" + append_txt
         else:
             new_content = append_txt
-        try:
-            if kind == "caption":
-                await message.bot.edit_message_caption(chat_id=chat_id, message_id=msg_id, caption=new_content)
-            else:
-                await message.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=new_content)
-        except Exception:
-            pass
+        if (chat_id is not None) and (msg_id is not None):
+            try:
+                if kind == "caption":
+                    await message.bot.edit_message_caption(chat_id=chat_id, message_id=msg_id, caption=new_content)
+                else:
+                    await message.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=new_content)
+            except Exception:
+                pass
     try:
         await clear_intent(f"INTENT:WREJ:{admin_id}")
         await clear_intent(f"INTENT:WREJCTX:{admin_id}")
