@@ -584,6 +584,13 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
             order = Order(
                 user_id=db_user.id,
                 plan_id=plan.id,
+                # snapshot of plan at purchase time
+                plan_template_id=plan.template_id,
+                plan_title=plan.title,
+                plan_price=plan.price,
+                plan_currency=plan.currency,
+                plan_duration_days=plan.duration_days,
+                plan_data_limit_bytes=plan.data_limit_bytes,
                 status="paid",
                 amount=price_irr,
                 currency=plan.currency,
