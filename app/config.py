@@ -42,6 +42,8 @@ class Settings:
     notify_expiry_days: str = os.getenv("NOTIFY_EXPIRY_DAYS", "3,1,0")
 
     sub_domain_preferred: str = os.getenv("SUB_DOMAIN_PREFERRED", "irsub.fun")
+    # Admin ops user notification toggle
+    notify_user_on_admin_ops: bool = _bool(os.getenv("NOTIFY_USER_ON_ADMIN_OPS"), True)
 
     log_chat_id: str = os.getenv("LOG_CHAT_ID", "")
 

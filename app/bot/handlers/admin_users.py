@@ -16,6 +16,7 @@ from app.db.models import User, Order, Setting, Plan, WalletTopUp, UserService
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE
 from app.services import marzban_ops as ops
 from app.marzban.client import get_client
+from app.config import settings
 
 router = Router()
 
@@ -483,6 +484,14 @@ async def admin_users_numeric_inputs(message: Message) -> None:
                     return
                 _SVC_INTENTS.pop(admin_id, None)
                 await message.answer(f"📈 به سرویس {s.username} {gb}GB اضافه شد.")
+                # Notify end-user (optional toggle)
+                try:
+                    if settings.notify_user_on_admin_ops:
+                        u2 = await session.scalar(select(User).where(User.id == suid))
+                        if u2:
+                            await message.bot.send_message(chat_id=u2.telegram_id, text=f"📈 {gb}GB به سرویس {s.username} شما توسط ادمین اضافه شد.")
+                except Exception:
+                    pass
                 return
             if sop == "extend_days_svc":
                 try:
@@ -499,6 +508,14 @@ async def admin_users_numeric_inputs(message: Message) -> None:
                     return
                 _SVC_INTENTS.pop(admin_id, None)
                 await message.answer(f"⏳ سرویس {s.username} به مدت {days} روز تمدید شد.")
+                # Notify end-user (optional toggle)
+                try:
+                    if settings.notify_user_on_admin_ops:
+                        u2 = await session.scalar(select(User).where(User.id == suid))
+                        if u2:
+                            await message.bot.send_message(chat_id=u2.telegram_id, text=f"⏳ سرویس {s.username} شما به مدت {days} روز توسط ادمین تمدید شد.")
+                except Exception:
+                    pass
                 return
         if op == "wallet_add_tmn":
             try:
@@ -665,6 +682,15 @@ async def cb_users_reset_service(cb: CallbackQuery) -> None:
         await cb.answer("ops error", show_alert=True)
         return
     await cb.answer("♻️ ریست شد")
+    # Notify end-user (optional toggle)
+    try:
+        if settings.notify_user_on_admin_ops:
+            async with session_scope() as session:
+                u = await session.scalar(select(User).where(User.id == uid))
+            if u:
+                await cb.message.bot.send_message(chat_id=u.telegram_id, text=f"♻️ سرویس {s.username} شما ریست شد.")
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("users:svcrvk:"))
@@ -690,6 +716,15 @@ async def cb_users_revoke_service(cb: CallbackQuery) -> None:
         await cb.answer("ops error", show_alert=True)
         return
     await cb.answer("🔗 لینک بروزرسانی شد")
+    # Notify end-user (optional toggle)
+    try:
+        if settings.notify_user_on_admin_ops:
+            async with session_scope() as session:
+                u = await session.scalar(select(User).where(User.id == uid))
+            if u:
+                await cb.message.bot.send_message(chat_id=u.telegram_id, text=f"🔗 لینک اشتراک سرویس {s.username} شما بروزرسانی شد.")
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("users:svcdel:"))
