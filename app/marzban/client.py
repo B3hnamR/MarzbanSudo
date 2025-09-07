@@ -154,12 +154,31 @@ class MarzbanClient:
         return resp.json()
 
     async def aclose(self) -> None:
+        # No-op: shared client is closed via aclose_shared()
+        return
+
+    async def aclose_hard(self) -> None:
         await self._client.aclose()
 
 
+_shared_client: Optional[MarzbanClient] = None
+
+
 async def get_client() -> MarzbanClient:
-    return MarzbanClient(
-        settings.marzban_base_url,
-        settings.marzban_admin_username,
-        settings.marzban_admin_password,
-    )
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = MarzbanClient(
+            settings.marzban_base_url,
+            settings.marzban_admin_username,
+            settings.marzban_admin_password,
+        )
+    return _shared_client
+
+
+async def aclose_shared() -> None:
+    global _shared_client
+    if _shared_client is not None:
+        try:
+            await _shared_client.aclose_hard()
+        finally:
+            _shared_client = None
