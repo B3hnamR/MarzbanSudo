@@ -337,6 +337,13 @@ async def cb_user_banbot(cb: CallbackQuery) -> None:
                 row.value = "1"
             u.status = "disabled"
             await session.commit()
+    # Invalidate BanGate caches immediately to avoid TTL delays
+    try:
+        from app.bot.middlewares.ban_gate import invalidate_ban_cache, invalidate_rbk_cache
+        invalidate_ban_cache(u.telegram_id)
+        invalidate_rbk_cache(u.telegram_id)
+    except Exception:
+        pass
     # Apply status to all services
     try:
         # Reload services
@@ -1099,27 +1106,135 @@ async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
     return True, ""
 
 async def _apply_username_change_and_provision(uid: int, tpl_id: int, new_username: str) -> Tuple[bool, str]:
-    # Update DB username first, then replace on server to avoid duplicates
+    """Provision a new service on a brand-new username without deleting/renaming existing ones.
+    - Does NOT modify User.marzban_username
+    - Creates/upserts UserService for the new username
+    - Provisions plan limits on the new username and records the Order
+    """
+    # Validate user and plan
     async with session_scope() as session:
         u = await session.scalar(select(User).where(User.id == uid))
-        if not u:
-            return False, "user not found"
-        old = u.marzban_username
-        u.marzban_username = new_username
-        await session.commit()
+        p = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
+    if not (u and p):
+        return False, "not found"
+    username = new_username
+    # Provision directly on the new username (create if not exists)
     try:
-        await ops.replace_user_username(old, new_username, note=f"grant tpl:{tpl_id}")
+        info = await ops.provision_for_plan(username, p)
     except Exception:
-        return False, "rename error"
-    # Ensure a UserService row is present for the new username before provisioning record
+        return False, "provision error"
+    # Persist order linked to a (new) service entry for this username
     async with session_scope() as session:
         u2 = await session.scalar(select(User).where(User.id == uid))
-        usvc = await session.scalar(select(UserService).where(UserService.user_id == u2.id, UserService.username == new_username))
+        # Upsert UserService for this username
+        usvc = await session.scalar(select(UserService).where(UserService.user_id == u2.id, UserService.username == username))
         if not usvc:
-            usvc = UserService(user_id=u2.id, username=new_username, status="active")
+            usvc = UserService(user_id=u2.id, username=username, status="active")
             session.add(usvc)
-            await session.commit()
-    return await _provision_and_record(uid, tpl_id)
+            await session.flush()
+        # Extract token
+        token = None
+        try:
+            sub_url = info.get("subscription_url", "") if isinstance(info, dict) else ""
+            token = sub_url.rstrip("/").split("/")[-1] if sub_url else None
+        except Exception:
+            token = None
+        if token:
+            usvc.last_token = token
+        # Create order linked to the service
+        o = Order(
+            user_id=u2.id,
+            plan_id=p.id,
+            user_service_id=usvc.id,
+            plan_template_id=p.template_id,
+            plan_title=p.title,
+            plan_price=Decimal('0'),
+            plan_currency=p.currency,
+            plan_duration_days=p.duration_days,
+            plan_data_limit_bytes=p.data_limit_bytes,
+            status="provisioned",
+            amount=Decimal('0'),
+            currency=p.currency,
+            provider="admin_grant",
+            provider_ref=None,
+            receipt_file_path=None,
+            admin_note="granted by admin",
+            idempotency_key=None,
+            paid_at=datetime.utcnow(),
+            provisioned_at=datetime.utcnow(),
+        )
+        session.add(o)
+        await session.commit()
+    # Notify user and deliver links/buttons similar to _provision_and_record
+    try:
+        sub_domain = (await _get_sub_domain())
+        msg_lines = [
+            "✅ سرویس جدید برای شما توسط ادمین فعال شد.",
+            f"🧩 پلن: {p.title}",
+            f"👤 یوزرنیم: {username}",
+        ]
+        if token and sub_domain:
+            msg_lines += [
+                f"🔗 لینک اشتراک: https://{sub_domain}/sub4me/{token}/",
+                f"🛰️ v2ray: https://{sub_domain}/sub4me/{token}/v2ray",
+                f"🧰 JSON:  https://{sub_domain}/sub4me/{token}/v2ray-json",
+            ]
+        await router.bot.send_message(chat_id=u2.telegram_id, text="\n".join(msg_lines))
+        # Fetch latest info to prepare manage buttons
+        links: list[str] = []
+        sub_url = ""
+        token2 = token
+        try:
+            client = await get_client()
+            info2 = await client.get_user(username)
+            links = list(map(str, (info2.get("links") or [])))
+            sub_url = str(info2.get("subscription_url") or "")
+            if not token2 and sub_url:
+                token2 = sub_url.rstrip("/").split("/")[-1]
+        except Exception:
+            links = []
+            sub_url = ""
+        finally:
+            try:
+                await client.aclose()  # type: ignore
+            except Exception:
+                pass
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        manage_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 مدیریت سرویس", callback_data=f"acct:svc:{usvc.id}"), InlineKeyboardButton(text="📋 کپی همه", callback_data=f"acct:copyall:svc:{usvc.id}")]])
+        if links:
+            chunk: list[str] = []
+            size = 0
+            for ln in links:
+                s = str(ln).strip()
+                if not s:
+                    continue
+                entry = ("\n\n" if chunk else "") + s
+                if size + len(entry) > 3500:
+                    await router.bot.send_message(chat_id=u2.telegram_id, text="\n\n".join(chunk))
+                    chunk = [s]
+                    size = len(s)
+                    continue
+                chunk.append(s)
+                size += len(entry)
+            if chunk:
+                await router.bot.send_message(chat_id=u2.telegram_id, text="\n\n".join(chunk), reply_markup=manage_kb)
+        else:
+            disp_url = ""
+            if sub_domain and token2:
+                disp_url = f"https://{sub_domain}/sub4me/{token2}/"
+            elif sub_url:
+                disp_url = sub_url
+            if disp_url:
+                qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={disp_url}"
+                try:
+                    await router.bot.send_photo(chat_id=u2.telegram_id, photo=qr_url, caption="🔳 QR اشتراک", reply_markup=manage_kb)
+                except Exception:
+                    await router.bot.send_message(chat_id=u2.telegram_id, text=disp_url, reply_markup=manage_kb)
+            else:
+                await router.bot.send_message(chat_id=u2.telegram_id, text="برای مدیریت سرویس از دکمه‌های زیر استفاده کنید.", reply_markup=manage_kb)
+    except Exception:
+        pass
+    return True, ""
 
 
 @router.callback_query(F.data.startswith("users:grantuse:"))
@@ -1138,7 +1253,9 @@ async def cb_users_grant_use(cb: CallbackQuery) -> None:
     if not ok:
         await cb.answer(err, show_alert=True)
         return
-    await cb.answer("granted")
+    await cb.answer("✅ فعال‌سازی انجام شد")
+    # اطلاع‌رسانی به ادمین در همان چت
+    await cb.message.answer("✅ سرویس برای کاربر فعال شد و لینک‌ها ارسال گردید.")
 
 
 @router.callback_query(F.data.startswith("users:grantrnd:"))
@@ -1173,7 +1290,8 @@ async def cb_users_grant_random(cb: CallbackQuery) -> None:
     if not ok:
         await cb.answer(err, show_alert=True)
         return
-    await cb.answer("granted")
+    await cb.answer("✅ فعال‌سازی انجام شد")
+    await cb.message.answer("✅ سرویس با یوزرنیم رندوم فعال شد و به کاربر ارسال گردید.")
 
 
 @router.callback_query(F.data.startswith("users:grantcust:"))
@@ -1218,4 +1336,4 @@ async def admin_users_grant_custom_username(message: Message) -> None:
     if not ok:
         await message.answer(f"خطا: {err}")
         return
-    await message.answer("سرویس با یوزرنیم دلخواه فعال شد.")
+    await message.answer("✅ سرویس با یوزرنیم دلخواه فعال شد و به کاربر ارسال گردید.")

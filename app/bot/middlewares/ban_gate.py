@@ -16,7 +16,7 @@ import time
 
 _BAN_CACHE: dict[int, tuple[bool, float]] = {}
 _RBK_CACHE: dict[int, float] = {}
-_TTL_SECONDS = float(os.getenv("BANGATE_CACHE_TTL", "120") or "120")
+_TTL_SECONDS = float(os.getenv("BANGATE_CACHE_TTL", "60") or "60")
 
 
 def _cache_get_bool(cache: dict[int, tuple[bool, float]], key: int) -> bool | None:
@@ -33,6 +33,16 @@ def _cache_get_bool(cache: dict[int, tuple[bool, float]], key: int) -> bool | No
 
 def _cache_set_bool(cache: dict[int, tuple[bool, float]], key: int, val: bool) -> None:
     cache[key] = (val, time.monotonic())
+
+
+def invalidate_ban_cache(tg_id: int) -> None:
+    """Invalidate ban state cache for a Telegram user id."""
+    _BAN_CACHE.pop(tg_id, None)
+
+
+def invalidate_rbk_cache(tg_id: int) -> None:
+    """Invalidate reply-keyboard-sent cache for a Telegram user id."""
+    _RBK_CACHE.pop(tg_id, None)
 
 
 async def _is_banned(tg_id: int) -> bool:
@@ -120,7 +130,7 @@ class BanGateMiddleware(BaseMiddleware):
         else:
             # CallbackQuery: show a short alert/toast
             try:
-                await event.answer("blocked")
+                await event.answer("⛔️ حساب شما در ربات بن شده است.")
             except Exception:
                 pass
         return None
