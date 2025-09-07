@@ -287,7 +287,7 @@ async def cb_user_ban(cb: CallbackQuery) -> None:
         await cb.message.edit_text(text, reply_markup=kb)
     except Exception:
         await cb.message.answer(text, reply_markup=kb)
-    await cb.answer("updated")
+    await cb.answer("✅ بروزرسانی شد")
 
 
 @router.callback_query(F.data.startswith("users:banbot:"))
@@ -392,7 +392,7 @@ async def cb_user_banbot(cb: CallbackQuery) -> None:
             await cb.message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
     except Exception:
         pass
-    await cb.answer("updated")
+    await cb.answer("✅ بروزرسانی شد")
 
 
 @router.callback_query(F.data.startswith("users:wadd:"))
@@ -664,7 +664,7 @@ async def cb_users_reset_service(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("ops error", show_alert=True)
         return
-    await cb.answer("reset")
+    await cb.answer("♻️ ریست شد")
 
 
 @router.callback_query(F.data.startswith("users:svcrvk:"))
@@ -689,7 +689,7 @@ async def cb_users_revoke_service(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("ops error", show_alert=True)
         return
-    await cb.answer("revoked")
+    await cb.answer("🔗 لینک بروزرسانی شد")
 
 
 @router.callback_query(F.data.startswith("users:svcdel:"))
@@ -722,8 +722,16 @@ async def cb_users_delete_service(cb: CallbackQuery) -> None:
             from sqlalchemy import delete as sa_delete
             await session.execute(sa_delete(UserService).where(UserService.id == sid))
             await session.commit()
-    await cb.message.answer("سرویس حذف شد.")
-    await cb.answer("deleted")
+    # اطلاع‌رسانی به کاربر
+    try:
+        async with session_scope() as session:
+            u = await session.scalar(select(User).where(User.id == uid))
+        if u:
+            await cb.message.bot.send_message(chat_id=u.telegram_id, text=f"🗑️ سرویس {username} شما توسط ادمین حذف شد.")
+    except Exception:
+        pass
+    await cb.message.answer("🗑️ سرویس حذف شد.")
+    await cb.answer("🗑️ حذف شد")
 
 
 @router.callback_query(F.data.startswith("users:reset:"))
@@ -778,7 +786,7 @@ async def cb_user_revoke(cb: CallbackQuery) -> None:
         await cb.message.bot.send_message(chat_id=u.telegram_id, text="لینک اشتراک شما توسط ادمین بروزرسانی شد.")
     except Exception:
         pass
-    await cb.answer("revoked")
+    await cb.answer("🔗 لینک بروزرسانی شد")
 
 
 @router.callback_query(F.data.startswith("users:delete:"))
@@ -805,7 +813,7 @@ async def cb_user_delete(cb: CallbackQuery) -> None:
         await cb.message.bot.send_message(chat_id=u.telegram_id, text="اکانت شما در پنل توسط ادمین حذف شد.")
     except Exception:
         pass
-    await cb.answer("deleted")
+    await cb.answer("🗑️ حذف شد")
 
 
 # Search flow
@@ -1256,6 +1264,14 @@ async def cb_users_grant_use(cb: CallbackQuery) -> None:
     await cb.answer("✅ فعال‌سازی انجام شد")
     # اطلاع‌رسانی به ادمین در همان چت
     await cb.message.answer("✅ سرویس برای کاربر فعال شد و لینک‌ها ارسال گردید.")
+    # اطلاع‌رسانی به خود کاربر
+    try:
+        async with session_scope() as session:
+            u = await session.scalar(select(User).where(User.id == uid))
+        if u:
+            await cb.message.bot.send_message(chat_id=u.telegram_id, text="✅ سرویس شما توسط ادمین فعال شد.")
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("users:grantrnd:"))
@@ -1292,6 +1308,14 @@ async def cb_users_grant_random(cb: CallbackQuery) -> None:
         return
     await cb.answer("✅ فعال‌سازی انجام شد")
     await cb.message.answer("✅ سرویس با یوزرنیم رندوم فعال شد و به کاربر ارسال گردید.")
+    # اطلاع‌رسانی به خود کاربر
+    try:
+        async with session_scope() as session:
+            u = await session.scalar(select(User).where(User.id == uid))
+        if u:
+            await cb.message.bot.send_message(chat_id=u.telegram_id, text="✅ سرویس شما توسط ادمین فعال شد.")
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("users:grantcust:"))
@@ -1337,3 +1361,11 @@ async def admin_users_grant_custom_username(message: Message) -> None:
         await message.answer(f"خطا: {err}")
         return
     await message.answer("✅ سرویس با یوزرنیم دلخواه فعال شد و به کاربر ارسال گردید.")
+    # اطلاع‌رسانی به خود کاربر
+    try:
+        async with session_scope() as session:
+            u2 = await session.scalar(select(User).where(User.id == uid))
+        if u2:
+            await message.bot.send_message(chat_id=u2.telegram_id, text="✅ سرویس شما توسط ادمین فعال شد.")
+    except Exception:
+        pass
