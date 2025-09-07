@@ -23,11 +23,11 @@ class User(Base):
     data_limit_bytes: Mapped[int] = mapped_column(BigInteger)
 
     last_usage_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
-    last_usage_ratio: Mapped[float] = mapped_column(Numeric(5, 4), default=0)
-    last_notified_usage_threshold: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    last_usage_ratio: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0"))
+    last_notified_usage_threshold: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4), nullable=True)
     last_notified_expiry_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -99,7 +99,7 @@ class WalletTopUp(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    amount: Mapped[Optional[float]] = mapped_column(Numeric(12, 2), nullable=True)
+    amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(8), default="IRR")
     status: Mapped[str] = mapped_column(String(32), index=True, default="pending")
     receipt_file_id: Mapped[str] = mapped_column(String(255))

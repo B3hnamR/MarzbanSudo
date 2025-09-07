@@ -23,6 +23,8 @@ from app.bot.middlewares.rate_limit import RateLimitMiddleware
 from app.bot.middlewares.ban_gate import BanGateMiddleware
 from app.bot.middlewares.correlation import CorrelationMiddleware
 from app.bot.middlewares.channel_gate import ChannelGateMiddleware
+from app.config import settings
+from app.marzban.client import aclose_shared as aclose_mz_shared
 
 try:
     # Optional: load .env in non-production environments
@@ -60,7 +62,7 @@ def _get_admin_ids() -> List[int]:
 async def main() -> None:
     setup_logging()
 
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    token = settings.telegram_bot_token
     if not token:
         logging.error("TELEGRAM_BOT_TOKEN تنظیم نشده است. آن را در فایل .env قرار دهید.")
         raise SystemExit(1)
@@ -69,10 +71,7 @@ async def main() -> None:
     dp = Dispatcher()
 
     # Rate limit per-user (apply to message and callback_query updates)
-    try:
-        max_per_min = int(os.getenv("RATE_LIMIT_USER_MSG_PER_MIN", "20"))
-    except ValueError:
-        max_per_min = 20
+    max_per_min = settings.rate_limit_user_msg_per_min
     # High-priority ban gate middleware (must be first)
     dp.message.middleware(BanGateMiddleware())
     dp.callback_query.middleware(BanGateMiddleware())
@@ -115,6 +114,10 @@ async def main() -> None:
         try:
             from app.services.notifications import aclose_bot
             await aclose_bot()
+        except Exception:
+            pass
+        try:
+            await aclose_mz_shared()
         except Exception:
             pass
         await bot.session.close()

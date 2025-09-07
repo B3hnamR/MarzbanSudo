@@ -10,18 +10,53 @@ from sqlalchemy import select
 from app.db.session import session_scope
 from app.db.models import Setting
 
+# Lightweight TTL caches to reduce hot-path DB roundtrips
+import os
+import time
+
+_BAN_CACHE: dict[int, tuple[bool, float]] = {}
+_RBK_CACHE: dict[int, float] = {}
+_TTL_SECONDS = float(os.getenv("BANGATE_CACHE_TTL", "120") or "120")
+
+
+def _cache_get_bool(cache: dict[int, tuple[bool, float]], key: int) -> bool | None:
+    now = time.monotonic()
+    item = cache.get(key)
+    if not item:
+        return None
+    val, ts = item
+    if now - ts > _TTL_SECONDS:
+        cache.pop(key, None)
+        return None
+    return val
+
+
+def _cache_set_bool(cache: dict[int, tuple[bool, float]], key: int, val: bool) -> None:
+    cache[key] = (val, time.monotonic())
+
 
 async def _is_banned(tg_id: int) -> bool:
-    """Check USER:{tg_id}:BANNED flag in settings ("1"/"true")."""
+    """Check USER:{tg_id}:BANNED flag in settings ("1"/"true") with TTL cache."""
+    cached = _cache_get_bool(_BAN_CACHE, tg_id)
+    if cached is not None:
+        return cached
     async with session_scope() as session:
         row = await session.scalar(select(Setting).where(Setting.key == f"USER:{tg_id}:BANNED"))
-        return bool(row and str(row.value).strip().lower() in {"1", "true"})
+        val = bool(row and str(row.value).strip().lower() in {"1", "true"})
+        _cache_set_bool(_BAN_CACHE, tg_id, val)
+        return val
 
 
 async def _rbk_sent(tg_id: int) -> bool:
+    cached = _cache_get_bool(_RBK_CACHE, tg_id)
+    if cached is not None:
+        return cached
     async with session_scope() as session:
         row = await session.scalar(select(Setting).where(Setting.key == f"USER:{tg_id}:RBK_SENT"))
-        return bool(row and str(row.value).strip())
+        val = bool(row and str(row.value).strip())
+        if val:
+            _cache_set_bool(_RBK_CACHE, tg_id, True)
+        return val
 
 
 async def _mark_rbk_sent(tg_id: int) -> None:
@@ -33,6 +68,11 @@ async def _mark_rbk_sent(tg_id: int) -> None:
         else:
             row.value = datetime.utcnow().isoformat()
         await session.commit()
+    # Update cache best-effort
+    try:
+        _cache_set_bool(_RBK_CACHE, tg_id, True)
+    except Exception:
+        pass
 
 
 class BanGateMiddleware(BaseMiddleware):
