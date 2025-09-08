@@ -250,6 +250,39 @@ async def cb_account_refresh(cb: CallbackQuery) -> None:
         await cb.answer()
 
 
+@router.callback_query(F.data == "acct:home")
+async def cb_account_home(cb: CallbackQuery) -> None:
+    if not cb.from_user:
+        await cb.answer()
+        return
+    # Build account home view similar to handle_account summary
+    async with session_scope() as session:
+        u = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
+        svcs = (await session.execute(select(UserService).where(UserService.user_id == u.id).order_by(UserService.created_at.desc()))).scalars().all() if u else []
+        row_p = await session.scalar(select(Setting).where(Setting.key == f"USER:{cb.from_user.id}:PHONE"))
+        phone_txt = str(row_p.value).strip() if (row_p and str(row_p.value).strip()) else "—"
+    total = len(svcs)
+    active_cnt = sum(1 for s in svcs if str(s.status or '').lower() == 'active')
+    disabled_cnt = sum(1 for s in svcs if str(s.status or '').lower() == 'disabled')
+    lines = [
+        "🔎 اطلاعات حساب کاربری شما:",
+        f"👤 آیدی عددی: {cb.from_user.id}",
+        f"📱 شماره: {phone_txt}",
+        f"🧩 تعداد سرویس‌ها: {total} | ✅ فعال: {active_cnt} | 🚫 غیرفعال: {disabled_cnt}",
+        "",
+        "👤 سرویس‌های شما:",
+    ]
+    kb_rows: List[List[InlineKeyboardButton]] = []
+    for s in svcs:
+        lines.append(f"- {s.username} | وضعیت: {s.status}")
+        kb_rows.append([InlineKeyboardButton(text=f"مدیریت {s.username}", callback_data=f"acct:svc:{s.id}")])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows or [[InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="acct:refresh")]])
+    try:
+        await cb.message.edit_text("\n".join(lines), reply_markup=kb)
+    except Exception:
+        await cb.message.answer("\n".join(lines), reply_markup=kb)
+    await cb.answer()
+
 @router.callback_query(F.data.startswith("acct:svc:"))
 async def cb_account_service_view(cb: CallbackQuery) -> None:
     if not cb.from_user:
@@ -319,8 +352,12 @@ async def cb_account_service_view(cb: CallbackQuery) -> None:
         [InlineKeyboardButton(text="📄 کانفیگ‌ها (متنی)", callback_data=f"acct:links:svc:{s.id}"), InlineKeyboardButton(text="📋 کپی همه", callback_data=f"acct:copyall:svc:{s.id}")],
         [InlineKeyboardButton(text="🔳 QR اشتراک", callback_data=f"acct:qr:svc:{s.id}")],
         [InlineKeyboardButton(text="➕ خرید حجم اضافه", callback_data=f"acct:buygb:svc:{s.id}")],
+        [InlineKeyboardButton(text="⬅️ بازگشت", callback_data="acct:home")],
     ])
-    await cb.message.answer("\n".join(lines), reply_markup=kb)
+    try:
+        await cb.message.edit_text("\n".join(lines), reply_markup=kb)
+    except Exception:
+        await cb.message.answer("\n".join(lines), reply_markup=kb)
     await cb.answer()
 
 

@@ -118,7 +118,67 @@ async def cb_plan_page(cb: CallbackQuery) -> None:
         page = int(cb.data.split(":")[2]) if cb.data else 1
     except Exception:
         page = 1
-    await _send_plans_page(cb.message, page)
+    # Build plans page and edit in-place
+    async with session_scope() as session:
+        all_plans = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
+        if not all_plans:
+            try:
+                await cb.message.edit_text("ℹ️ هیچ پلنی موجود نیست.")
+            except Exception:
+                await cb.message.answer("ℹ️ هیچ پلنی موجود نیست.")
+            await cb.answer()
+            return
+        total = len(all_plans)
+        pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+        page = max(1, min(page, pages))
+        start = (page - 1) * PAGE_SIZE
+        subset = all_plans[start:start + PAGE_SIZE]
+        lines = [
+            "🔥 بهترین سرویس‌ها با کیفیت پایدار و پشتیبانی سریع",
+            "• تنوع در حجم و مدت برای نیازهای مختلف",
+            "• فعال‌سازی آنی پس از پرداخت",
+            "• مناسب موبایل و دسکتاپ",
+            "",
+            "یکی از پلن‌های زیر را انتخاب کنید:",
+        ]
+        buttons = []
+        for p in subset:
+            price_irr = Decimal(str(p.price or 0))
+            btn_text = (
+                f"🛒 خرید {p.title} — {int(price_irr/Decimal('10')):,} تومان" if price_irr > 0 else f"🛒 خرید {p.title}"
+            )
+            buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"plan:buy:{p.template_id}")])
+        nav = []
+        if page > 1:
+            nav.append(InlineKeyboardButton(text="◀️ قبلی", callback_data=f"plan:page:{page-1}"))
+        if page < pages:
+            nav.append(InlineKeyboardButton(text="بعدی ▶️", callback_data=f"plan:page:{page+1}"))
+        if nav:
+            buttons.append(nav)
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        try:
+            await cb.message.edit_text("\n".join(lines), reply_markup=kb)
+        except Exception:
+            await cb.message.answer("\n".join(lines), reply_markup=kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("plan:mode:sel:"))
+async def cb_plan_mode_sel(cb: CallbackQuery) -> None:
+    try:
+        tpl_id = int(cb.data.split(":")[3])
+    except Exception:
+        await cb.answer("شناسه نامعتبر است", show_alert=True)
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🆕 اکانت جدید", callback_data=f"plan:mode:new:{tpl_id}")],
+        [InlineKeyboardButton(text="🔁 تمدید اکانت", callback_data=f"plan:mode:ext:{tpl_id}")],
+        [InlineKeyboardButton(text="⬅️ بازگشت", callback_data="plan:page:1")],
+    ])
+    try:
+        await cb.message.edit_text("نوع خرید را انتخاب کنید:", reply_markup=kb)
+    except Exception:
+        await cb.message.answer("نوع خرید را انتخاب کنید:", reply_markup=kb)
     await cb.answer()
 
 
@@ -139,8 +199,14 @@ async def _present_final_confirm(cb: CallbackQuery, tpl_id: int, username_eff: s
         f"👤 یوزرنیم سرویس: {username_eff}\n"
         f"💵 مبلغ: {tmn:,} تومان"
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تایید ✅", callback_data=f"plan:final:{tpl_id}"), InlineKeyboardButton(text="انصراف ❌", callback_data="plan:cancel")]])
-    await cb.message.answer(text, reply_markup=kb)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="تایید ✅", callback_data=f"plan:final:{tpl_id}"), InlineKeyboardButton(text="انصراف ❌", callback_data="plan:cancel")],
+        [InlineKeyboardButton(text="⬅️ بازگشت", callback_data=f"plan:mode:sel:{tpl_id}")],
+    ])
+    try:
+        await cb.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        await cb.message.answer(text, reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("plan:buy:"))
@@ -228,8 +294,12 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🆕 اکانت جدید", callback_data=f"plan:mode:new:{tpl_id}")],
             [InlineKeyboardButton(text="🔁 تمدید اکانت", callback_data=f"plan:mode:ext:{tpl_id}")],
+            [InlineKeyboardButton(text="⬅️ بازگشت", callback_data="plan:page:1")],
         ])
-        await cb.message.answer("نوع خرید را انتخاب کنید:", reply_markup=kb)
+        try:
+            await cb.message.edit_text("نوع خرید را انتخاب کنید:", reply_markup=kb)
+        except Exception:
+            await cb.message.answer("نوع خرید را انتخاب کنید:", reply_markup=kb)
         await cb.answer()
 
 
@@ -304,7 +374,10 @@ async def cb_plan_uname_cst(cb: CallbackQuery) -> None:
         await cb.answer("شناسه نامعتبر است", show_alert=True)
         return
     _PURCHASE_CUSTOM_PENDING[cb.from_user.id] = tpl_id
-    await cb.message.answer("یوزرنیم دلخواه را ارسال کنید (فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر).")
+    try:
+        await cb.message.edit_text("یوزرنیم دلخواه را ارسال کنید (فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر).")
+    except Exception:
+        await cb.message.answer("یوزرنیم دلخواه را ارسال کنید (فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر).")
     await cb.answer()
 
 
@@ -355,8 +428,12 @@ async def cb_plan_mode_new(cb: CallbackQuery, tpl_id: int | None = None) -> None
     kb = InlineKeyboardMarkup(inline_keyboard=[
          [InlineKeyboardButton(text="ساخت یوزرنیم رندوم", callback_data=f"plan:uname:rnd:{t}")],
         [InlineKeyboardButton(text="یوزرنیم دلخواه ✏️", callback_data=f"plan:uname:cst:{t}")],
+        [InlineKeyboardButton(text="⬅️ بازگشت", callback_data=f"plan:mode:sel:{t}")],
     ])
-    await cb.message.answer("🧩 لطفاً روش انتخاب یوزرنیم را انتخاب کنید:", reply_markup=kb)
+    try:
+        await cb.message.edit_text("🧩 لطفاً روش انتخاب یوزرنیم را انتخاب کنید:", reply_markup=kb)
+    except Exception:
+        await cb.message.answer("🧩 لطفاً روش انتخاب یوزرنیم را انتخاب کنید:", reply_markup=kb)
     await cb.answer()
 
 
@@ -394,8 +471,12 @@ async def cb_plan_mode_ext(cb: CallbackQuery) -> None:
     for s in services:
         lines.append(f"- {s.username} | وضعیت: {s.status}")
         kb_rows.append([InlineKeyboardButton(text=f"تمدید {s.username}", callback_data=f"plan:extsel:{tpl_id}:{s.id}")])
+    kb_rows.append([InlineKeyboardButton(text="⬅️ بازگشت", callback_data=f"plan:mode:sel:{tpl_id}")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    await cb.message.answer("\n".join(lines), reply_markup=kb)
+    try:
+        await cb.message.edit_text("\n".join(lines), reply_markup=kb)
+    except Exception:
+        await cb.message.answer("\n".join(lines), reply_markup=kb)
     await cb.answer()
 
 
