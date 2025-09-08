@@ -532,9 +532,9 @@ async def cb_plan_final(cb: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "plan:cancel")
 async def cb_plan_cancel(cb: CallbackQuery) -> None:
-    await cb.answer("انصراف شد")
+    await cb.answer("❌ خرید لغو شد")
     try:
-        await cb.message.edit_text("خرید لغو شد ❌")
+        await cb.message.edit_text("❌ خرید لغو شد")
     except Exception:
         pass
 
@@ -572,7 +572,7 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
                 f"موجودی شما: {int(balance_irr/Decimal('10')):,} تومان\n"
                 "از دکمه 💳 کیف پول برای شارژ استفاده کنید."
             )
-            await cb.answer("Insufficient balance", show_alert=False)
+            await cb.answer("⚠️ موجودی کافی نیست", show_alert=False)
             return
         # Enough balance → create order and provision
         from app.services import marzban_ops as ops
