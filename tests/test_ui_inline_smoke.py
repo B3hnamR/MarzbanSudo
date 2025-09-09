@@ -2,6 +2,19 @@ import asyncio
 import types
 import pytest
 from decimal import Decimal
+import sys
+import types as _types
+
+# Pre-mock httpx to avoid external dependency during import of app.marzban.client
+if "httpx" not in sys.modules:
+    _httpx = _types.ModuleType("httpx")
+    class _DummyAsyncClient:
+        async def aclose(self):
+            pass
+    _httpx.AsyncClient = _DummyAsyncClient
+    _httpx.Timeout = object
+    _httpx.Response = object
+    sys.modules["httpx"] = _httpx
 
 # Import target functions from the user-facing flow
 from app.bot.handlers.plans import _present_final_confirm, cb_plan_cancel
