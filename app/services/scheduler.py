@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from aiojobs import create_scheduler
+import httpx
 from sqlalchemy import select, update, and_, text
 
 from app.db.session import session_scope
@@ -60,6 +61,15 @@ async def job_notify_usage() -> None:
                 # Notify user
                 pct = int(crossed * 100)
                 await notify_user(u.telegram_id, f"هشدار مصرف: شما از {pct}% حجم سرویس عبور کرده‌اید.")
+            except httpx.HTTPStatusError as e:
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                if status == 404:
+                    logger.info(
+                        "job_notify_usage: user not found in Marzban; skipping",
+                        extra={"extra": {"user_id": u.id, "username": u.marzban_username}},
+                    )
+                    continue
+                logger.exception("job_notify_usage: http error for user %s", u.id)
             except Exception:
                 logger.exception("job_notify_usage: error for user %s", u.id)
         await session.commit()
@@ -91,6 +101,15 @@ async def job_notify_expiry() -> None:
                     u.last_notified_expiry_day = days_left
                     await session.flush()
                     await notify_user(u.telegram_id, f"اطلاعیه انقضا: {days_left} روز تا پایان سرویس باقی مانده است.")
+            except httpx.HTTPStatusError as e:
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                if status == 404:
+                    logger.info(
+                        "job_notify_expiry: user not found in Marzban; skipping",
+                        extra={"extra": {"user_id": u.id, "username": u.marzban_username}},
+                    )
+                    continue
+                logger.exception("job_notify_expiry: http error for user %s", u.id)
             except Exception:
                 logger.exception("job_notify_expiry: error for user %s", u.id)
         await session.commit()
