@@ -1,4 +1,4 @@
-version: "3.9"
+# docker compose v2: no version key (removed to suppress warnings)
 
 services:
   db:
@@ -62,9 +62,10 @@ services:
     command: python -c "import asyncio; from app.services.scheduler import run_scheduler; asyncio.run(run_scheduler())"
     healthcheck:
       test: ["CMD", "python", "-c", "import importlib; importlib.import_module('app.services.scheduler'); print('ok')"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
     deploy:
       resources:
         limits:
