@@ -41,6 +41,9 @@ class Settings:
     notify_usage_thresholds: str = os.getenv("NOTIFY_USAGE_THRESHOLDS", "0.7,0.9")
     notify_expiry_days: str = os.getenv("NOTIFY_EXPIRY_DAYS", "3,1,0")
 
+    required_channel: str = os.getenv("REQUIRED_CHANNEL", "")
+    phone_verification_enabled_default: bool = _bool(os.getenv("PHONE_VERIFICATION_ENABLED"), False)
+
     sub_domain_preferred: str = os.getenv("SUB_DOMAIN_PREFERRED", "irsub.fun")
     # Admin ops user notification toggle
     notify_user_on_admin_ops: bool = _bool(os.getenv("NOTIFY_USER_ON_ADMIN_OPS"), True)

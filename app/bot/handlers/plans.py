@@ -22,6 +22,7 @@ from app.db.models import Plan, User, Order, UserService
 from app.services import marzban_ops as ops
 from app.scripts.sync_plans import sync_templates_to_plans
 from app.utils.username import tg_username
+from app.config import settings
 
 
 router = Router()
@@ -220,13 +221,8 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
         await cb.answer()
         return
     # Gates: channel + phone; only show confirm if gates pass
-    channel = os.getenv("REQUIRED_CHANNEL", "").strip()
-    admin_ids_env = os.getenv("TELEGRAM_ADMIN_IDS", "")
-    is_admin_user = False
-    try:
-        is_admin_user = cb.from_user.id in {int(x.strip()) for x in admin_ids_env.split(',') if x.strip().isdigit()}
-    except Exception:
-        is_admin_user = False
+    channel = (settings.required_channel or "").strip()
+    is_admin_user = bool(cb.from_user and (cb.from_user.id in set(settings.telegram_admin_ids)))
     if channel and not is_admin_user:
         try:
             member = await cb.message.bot.get_chat_member(chat_id=channel, user_id=cb.from_user.id)
@@ -259,7 +255,7 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
             if row:
                 pv_enabled = str(row.value).strip() in {"1", "true", "True"}
             else:
-                pv_enabled = os.getenv("PHONE_VERIFICATION_ENABLED", "0").strip() in {"1", "true", "True"}
+                pv_enabled = settings.phone_verification_enabled_default
             if pv_enabled and not is_admin_user:
                 row_v = await session.scalar(sa_select(Setting).where(Setting.key == f"USER:{cb.from_user.id}:PHONE_VERIFIED_AT"))
                 verified = bool(row_v and str(row_v.value).strip())
@@ -509,13 +505,8 @@ async def cb_plan_confirm(cb: CallbackQuery) -> None:
         await cb.answer("شناسه نامعتبر است", show_alert=True)
         return
     # Re-run gates quickly (in case state changed)
-    channel = os.getenv("REQUIRED_CHANNEL", "").strip()
-    admin_ids_env = os.getenv("TELEGRAM_ADMIN_IDS", "")
-    is_admin_user = False
-    try:
-        is_admin_user = cb.from_user and (cb.from_user.id in {int(x.strip()) for x in admin_ids_env.split(',') if x.strip().isdigit()})
-    except Exception:
-        is_admin_user = False
+    channel = (settings.required_channel or "").strip()
+    is_admin_user = bool(cb.from_user and (cb.from_user.id in set(settings.telegram_admin_ids)))
     if channel and not is_admin_user:
         try:
             member = await cb.message.bot.get_chat_member(chat_id=channel, user_id=cb.from_user.id)
@@ -565,13 +556,8 @@ async def cb_plan_final(cb: CallbackQuery) -> None:
         await cb.answer("شناسه نامعتبر است", show_alert=True)
         return
     # Re-run gates quickly (in case state changed)
-    channel = os.getenv("REQUIRED_CHANNEL", "").strip()
-    admin_ids_env = os.getenv("TELEGRAM_ADMIN_IDS", "")
-    is_admin_user = False
-    try:
-        is_admin_user = cb.from_user and (cb.from_user.id in {int(x.strip()) for x in admin_ids_env.split(',') if x.strip().isdigit()})
-    except Exception:
-        is_admin_user = False
+    channel = (settings.required_channel or "").strip()
+    is_admin_user = bool(cb.from_user and (cb.from_user.id in set(settings.telegram_admin_ids)))
     if channel and not is_admin_user:
         try:
             member = await cb.message.bot.get_chat_member(chat_id=channel, user_id=cb.from_user.id)
@@ -726,7 +712,7 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
             return
         # Notify
         try:
-            sub_domain = os.getenv("SUB_DOMAIN_PREFERRED", "")
+            sub_domain = settings.sub_domain_preferred
             lines = [
                 "✅ خرید با موفقیت از کیف پول انجام شد.",
                 f"🧩 پلن: {plan.title}",
