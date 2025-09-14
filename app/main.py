@@ -19,6 +19,8 @@ from app.bot.handlers import admin_orders as admin_orders_handlers
 from app.bot.handlers import trial as trial_handlers
 from app.bot.handlers import wallet as wallet_handlers
 from app.bot.handlers import admin_users as admin_users_handlers
+from app.bot.handlers import admin_trial as admin_trial_handlers
+from app.bot.handlers import admin_trial_access as admin_trial_access_handlers
 from app.bot.middlewares.rate_limit import RateLimitMiddleware
 from app.bot.middlewares.ban_gate import BanGateMiddleware
 from app.bot.middlewares.correlation import CorrelationMiddleware
@@ -103,6 +105,8 @@ async def main() -> None:
     # capture admin intents prior to wallet's generic numeric handler
     dp.include_router(admin_users_handlers.router)
     dp.include_router(wallet_handlers.router)
+    dp.include_router(admin_trial_handlers.router)
+    dp.include_router(admin_trial_access_handlers.router)
 
     # Polling startup
     logging.info("Starting Telegram bot polling ...")

@@ -6,6 +6,9 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from app.marzban.client import get_client
+from sqlalchemy import select
+from app.db.session import session_scope
+from app.db.models import Setting
 from app.utils.username import tg_username
 from app.config import settings
 
@@ -38,6 +41,59 @@ async def provision_trial(telegram_id: int) -> dict:
       - Then set expire and data_limit via two separate PUT calls.
       - Finally return current user info.
     """
+    # Resolve trial config from DB (overrides ENV), with ENV fallback
+    enabled = settings.trial_enabled
+    data_gb = settings.trial_data_gb
+    duration_days = settings.trial_duration_days
+    one_per_user = False
+    access_mode = "public"  # public | whitelist
+    try:
+        async with session_scope() as session:
+            row = await session.scalar(select(Setting).where(Setting.key == "TRIAL_ENABLED"))
+            if row:
+                enabled = str(row.value).strip() in {"1", "true", "True"}
+            row = await session.scalar(select(Setting).where(Setting.key == "TRIAL_DATA_GB"))
+            if row:
+                try:
+                    data_gb = int(str(row.value).strip())
+                except Exception:
+                    pass
+            row = await session.scalar(select(Setting).where(Setting.key == "TRIAL_DURATION_DAYS"))
+            if row:
+                try:
+                    duration_days = int(str(row.value).strip())
+                except Exception:
+                    pass
+            row = await session.scalar(select(Setting).where(Setting.key == "TRIAL_ONE_PER_USER"))
+            if row:
+                one_per_user = str(row.value).strip() in {"1", "true", "True"}
+            row = await session.scalar(select(Setting).where(Setting.key == "TRIAL_ACCESS_MODE"))
+            if row:
+                val = str(row.value).strip().lower()
+                if val in {"public", "whitelist"}:
+                    access_mode = val
+            if one_per_user:
+                used = await session.scalar(select(Setting).where(Setting.key == f"USER:{telegram_id}:TRIAL_USED_AT"))
+                if used and str(used.value).strip():
+                    raise RuntimeError("trial_already_used")
+            # Per-user access policy
+            if access_mode == "whitelist":
+                allow = await session.scalar(select(Setting).where(Setting.key == f"USER:{telegram_id}:TRIAL_ALLOWED"))
+                if not (allow and str(allow.value).strip() in {"1", "true", "True"}):
+                    raise RuntimeError("trial_not_allowed")
+            else:
+                deny = await session.scalar(select(Setting).where(Setting.key == f"USER:{telegram_id}:TRIAL_DISABLED"))
+                if deny and str(deny.value).strip() in {"1", "true", "True"}:
+                    raise RuntimeError("trial_disabled_user")
+    except RuntimeError:
+        raise
+    except Exception:
+        # On any error reading settings, proceed with ENV defaults
+        pass
+
+    if not enabled:
+        raise RuntimeError("trial_disabled")
+
     client = await get_client()
     try:
         username = tg_username(telegram_id)
@@ -82,8 +138,8 @@ async def provision_trial(telegram_id: int) -> dict:
                     raise
 
         # Stage updates (expire then data_limit) if limits configured
-        expire_ts = int((datetime.now(timezone.utc) + timedelta(days=settings.trial_duration_days)).timestamp()) if settings.trial_duration_days > 0 else 0
-        data_limit_bytes = int(settings.trial_data_gb) * 1024 ** 3 if settings.trial_data_gb > 0 else 0
+        expire_ts = int((datetime.now(timezone.utc) + timedelta(days=duration_days)).timestamp()) if duration_days > 0 else 0
+        data_limit_bytes = int(data_gb) * 1024 ** 3 if data_gb > 0 else 0
 
         # Update expire first
         try:
@@ -99,7 +155,22 @@ async def provision_trial(telegram_id: int) -> dict:
 
         # Return current snapshot (best-effort)
         try:
-            return await client.get_user(username)
+            result = await client.get_user(username)
+            # Mark trial used for user if policy is one-per-user
+            if one_per_user:
+                try:
+                    from datetime import datetime as _dt
+                    async with session_scope() as session:
+                        row = await session.scalar(select(Setting).where(Setting.key == f"USER:{telegram_id}:TRIAL_USED_AT"))
+                        ts = _dt.utcnow().isoformat()
+                        if not row:
+                            session.add(Setting(key=f"USER:{telegram_id}:TRIAL_USED_AT", value=ts))
+                        else:
+                            row.value = ts
+                        await session.commit()
+                except Exception:
+                    pass
+            return result
         except Exception:
             # If fetch fails, synthesize a minimal response
             return {"username": username, "status": "active", "data_limit": data_limit_bytes, "expire": expire_ts}
