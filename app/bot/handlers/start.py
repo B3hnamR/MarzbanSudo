@@ -42,6 +42,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="💳 درخواست‌های شارژ"), KeyboardButton(text="💼 تنظیمات کیف پول")],
             [KeyboardButton(text="⚙️ مدیریت پلن‌ها"), KeyboardButton(text="📦 سفارش‌های اخیر")],
             [KeyboardButton(text="👥 مدیریت کاربران"), KeyboardButton(text="📱 تنظیمات احراز شماره")],
+            [KeyboardButton(text="??????? ???"), KeyboardButton(text="?????? ???")],
             [KeyboardButton(text="➕ شارژ دستی")],
         ], resize_keyboard=True
     )
@@ -273,3 +274,4 @@ async def handle_contact_share(message: Message) -> None:
             row_t.value = now_iso
         await session.commit()
     await message.answer("✅ شماره شما با موفقیت تایید شد. اکنون می‌توانید خرید را ادامه دهید.", reply_markup=_user_keyboard())
+

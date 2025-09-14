@@ -87,6 +87,12 @@ async def admin_trial_menu(message: Message) -> None:
     await message.answer(txt, reply_markup=_kb(enabled, one_per_user))
 
 
+# Shortcut via keyboard button text
+@router.message(F.text == "تنظیمات تست")
+async def _btn_admin_trial_menu(message: Message) -> None:
+    await admin_trial_menu(message)
+
+
 @router.callback_query(F.data.in_({"trial:on", "trial:off", "trial:one:on", "trial:one:off", "trial:refresh"}))
 async def cb_trial_toggle_refresh(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
@@ -211,4 +217,3 @@ async def msg_trial_admin_capture(message: Message) -> None:
                 await message.answer("ℹ️ برای این کاربر وضعیت استفاده ثبت نشده بود.")
         await clear_intent(f"INTENT:TRIAL:RESET:{uid}")
         return
-

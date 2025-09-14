@@ -61,6 +61,11 @@ async def admin_trial_access_menu(message: Message) -> None:
     await message.answer(txt, reply_markup=_kb_access(mode))
 
 
+@router.message(F.text == "دسترسی تست")
+async def _btn_admin_trial_access_menu(message: Message) -> None:
+    await admin_trial_access_menu(message)
+
+
 @router.callback_query(F.data.startswith("trialacc:"))
 async def cb_trial_access(cb: CallbackQuery) -> None:
     if not (cb.from_user and await has_capability_async(cb.from_user.id, CAP_WALLET_MODERATE)):
@@ -147,4 +152,3 @@ async def msg_trial_access_ops(message: Message) -> None:
             await clear_intent(key)
             await message.answer("✅ اعمال شد.")
             return
-
