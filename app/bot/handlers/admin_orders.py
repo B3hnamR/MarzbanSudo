@@ -6,11 +6,11 @@ from typing import Optional
 
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
 from sqlalchemy import select, update
 from decimal import Decimal
 
-from app.db.session import session_scope
+from app.db.session import session_scope\nfrom app.utils.qr import generate_qr_png
 from app.db.models import Order, User, Plan, UserService
 from app.services import marzban_ops as ops
 from app.services.audit import log_audit
@@ -298,9 +298,9 @@ async def cb_approve_order(cb: CallbackQuery) -> None:
         elif sub_url:
             disp_url = sub_url
         if disp_url:
-            qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={disp_url}"
+            photo = BufferedInputFile(generate_qr_png(disp_url, size=400, border=2), filename="subscription_qr.png")
             try:
-                await cb.message.bot.send_photo(chat_id=user.telegram_id, photo=qr_url, caption="🔳 QR اشتراک")
+                await cb.message.bot.send_photo(chat_id=user.telegram_id, photo=photo, caption="🔳 QR اشتراک")
             except Exception:
                 await cb.message.bot.send_message(chat_id=user.telegram_id, text=disp_url)
     except Exception:
@@ -351,3 +351,7 @@ async def cb_reject_order(cb: CallbackQuery) -> None:
     except Exception:
         pass
     await cb.answer("Rejected")
+
+
+
+

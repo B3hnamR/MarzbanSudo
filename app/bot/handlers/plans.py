@@ -9,6 +9,9 @@ import string
 from decimal import Decimal
 from datetime import datetime
 from typing import List, Tuple, Dict
+from aiogram.types import BufferedInputFile
+from app.utils.qr import generate_qr_png
+from app.utils.intent_store import set_intent_json, get_intent_json, clear_intent
 from app.marzban.client import get_client
 
 from aiogram import Router, F
@@ -28,14 +31,12 @@ from app.config import settings
 router = Router()
 
 PAGE_SIZE = 5
-# Purchase username selection state
-_PURCHASE_SELECTION: Dict[int, Tuple[int, str]] = {}
-_PURCHASE_CUSTOM_PENDING: Dict[int, int] = {}
-# Multi-service purchase mode and selected service
-# _PURCHASE_MODE[user_id] = (mode, tpl_id) where mode in {"new","extend"}
-_PURCHASE_MODE: Dict[int, Tuple[str, int]] = {}
-# _PURCHASE_EXT_SERVICE[user_id] = service_id to extend
-_PURCHASE_EXT_SERVICE: Dict[int, int] = {}
+
+# Intent keys (DB-backed state)
+def _k_sel(uid: int) -> str: return f"INTENT:BUY:SEL:{uid}"
+def _k_mode(uid: int) -> str: return f"INTENT:BUY:MODE:{uid}"
+def _k_ext(uid: int) -> str: return f"INTENT:BUY:EXT:{uid}"
+def _k_cst(uid: int) -> str: return f"INTENT:BUY:CST:{uid}"
 
 
 def _plan_text(p: Plan) -> str:
@@ -279,10 +280,13 @@ async def cb_plan_buy(cb: CallbackQuery) -> None:
     if not plan:
         await cb.answer("پلن یافت نشد", show_alert=True)
         return
-    _PURCHASE_SELECTION.pop(cb.from_user.id, None)
-    _PURCHASE_CUSTOM_PENDING.pop(cb.from_user.id, None)
-    _PURCHASE_MODE.pop(cb.from_user.id, None)
-    _PURCHASE_EXT_SERVICE.pop(cb.from_user.id, None)
+    try:
+        await clear_intent(_k_sel(cb.from_user.id))
+        await clear_intent(_k_cst(cb.from_user.id))
+        await clear_intent(_k_mode(cb.from_user.id))
+        await clear_intent(_k_ext(cb.from_user.id))
+    except Exception:
+        pass
     if not services:
         # No services yet → go to new service mode directly
         await cb_plan_mode_new(cb, tpl_id)
@@ -315,7 +319,10 @@ async def cb_plan_uname_use(cb: CallbackQuery) -> None:
     if not plan:
         await cb.answer("پلن یافت نشد", show_alert=True)
         return
-    _PURCHASE_SELECTION[cb.from_user.id] = (tpl_id, username_eff)
+    try:
+        await set_intent_json(_k_sel(cb.from_user.id), {"tpl_id": tpl_id, "username": username_eff})
+    except Exception:
+        pass
     await _present_final_confirm(cb, tpl_id, username_eff, plan)
     await cb.answer()
 
@@ -357,7 +364,10 @@ async def cb_plan_uname_rnd(cb: CallbackQuery) -> None:
     if not plan:
         await cb.answer("پلن یافت نشد", show_alert=True)
         return
-    _PURCHASE_SELECTION[cb.from_user.id] = (tpl_id, candidate)
+    try:
+        await set_intent_json(_k_sel(cb.from_user.id), {"tpl_id": tpl_id, "username": candidate})
+    except Exception:
+        pass
     await _present_final_confirm(cb, tpl_id, candidate, plan)
     await cb.answer()
 
@@ -369,7 +379,10 @@ async def cb_plan_uname_cst(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("شناسه نامعتبر است", show_alert=True)
         return
-    _PURCHASE_CUSTOM_PENDING[cb.from_user.id] = tpl_id
+    try:
+        await set_intent_json(_k_cst(cb.from_user.id), {"tpl_id": tpl_id})
+    except Exception:
+        pass
     try:
         await cb.message.edit_text("یوزرنیم دلخواه را ارسال کنید (فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر).")
     except Exception:
@@ -377,26 +390,39 @@ async def cb_plan_uname_cst(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and m.from_user and m.from_user.id in _PURCHASE_CUSTOM_PENDING and isinstance(getattr(m, "text", None), str))
+@router.message(lambda m: getattr(m, "from_user", None) and isinstance(getattr(m, "text", None), str))
 async def msg_plan_uname_custom(message: Message) -> None:
     user_id = message.from_user.id
-    tpl_id = _PURCHASE_CUSTOM_PENDING.pop(user_id)
+    payload = await get_intent_json(_k_cst(user_id))
+    if not (payload and isinstance(payload, dict) and payload.get("tpl_id")):
+        return
+    tpl_id = int(payload.get("tpl_id"))
     uname = (message.text or "").strip()
     if not re.fullmatch(r"[a-z0-9]{6,}", uname):
         await message.answer("فرمت نامعتبر است. فقط حروف کوچک و ارقام، حداقل ۶ کاراکتر.")
-        _PURCHASE_CUSTOM_PENDING[user_id] = tpl_id
+        try:
+            await set_intent_json(_k_cst(user_id), {"tpl_id": tpl_id})
+        except Exception:
+            pass
         return
     async with session_scope() as session:
         exists = await session.scalar(select(User.id).where(User.marzban_username == uname))
         if exists:
             await message.answer("این یوزرنیم قبلاً استفاده شده است. مورد دیگری ارسال کنید.")
-            _PURCHASE_CUSTOM_PENDING[user_id] = tpl_id
+            try:
+                await set_intent_json(_k_cst(user_id), {"tpl_id": tpl_id})
+            except Exception:
+                pass
             return
         plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
     if not plan:
         await message.answer("⚠️ پلن یافت نشد.")
         return
-    _PURCHASE_SELECTION[user_id] = (tpl_id, uname)
+    try:
+        await set_intent_json(_k_sel(user_id), {"tpl_id": tpl_id, "username": uname})
+        await clear_intent(_k_cst(user_id))
+    except Exception:
+        pass
     # Use a fake cb wrapper for uniform rendering
     class _Cb:
         def __init__(self, m): self.message = m
@@ -410,7 +436,10 @@ async def cb_plan_mode_new(cb: CallbackQuery, tpl_id: int | None = None) -> None
     except Exception:
         await cb.answer("شناسه نامعتبر است", show_alert=True)
         return
-    _PURCHASE_MODE[cb.from_user.id] = ("new", t)
+    try:
+        await set_intent_json(_k_mode(cb.from_user.id), {"mode": "new", "tpl_id": t})
+    except Exception:
+        pass
     # Proceed to username selection UI (existing flow)
     async with session_scope() as session:
         plan = (await session.execute(select(Plan).where(Plan.template_id == t, Plan.is_active == True))).scalars().first()
@@ -440,7 +469,10 @@ async def cb_plan_mode_ext(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("شناسه نامعتبر است", show_alert=True)
         return
-    _PURCHASE_MODE[cb.from_user.id] = ("extend", tpl_id)
+    try:
+        await set_intent_json(_k_mode(cb.from_user.id), {"mode": "extend", "tpl_id": tpl_id})
+    except Exception:
+        pass
     # List services to extend
     async with session_scope() as session:
         urow = await session.scalar(select(User).where(User.telegram_id == cb.from_user.id))
@@ -485,7 +517,10 @@ async def cb_plan_extend_select(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("شناسه نامعتبر است", show_alert=True)
         return
-    _PURCHASE_EXT_SERVICE[cb.from_user.id] = sid
+    try:
+        await set_intent_json(_k_ext(cb.from_user.id), {"sid": sid, "tpl_id": tpl_id})
+    except Exception:
+        pass
     # Show final confirmation with the service username
     async with session_scope() as session:
         plan = (await session.execute(select(Plan).where(Plan.template_id == tpl_id, Plan.is_active == True))).scalars().first()
@@ -528,15 +563,15 @@ async def cb_plan_confirm(cb: CallbackQuery) -> None:
         pass
     # Ensure username selection applied (rename if changed) then proceed
     # Ensure DB user exists; do not rename here (multi-service)
-    sel = _PURCHASE_SELECTION.get(cb.from_user.id)
-    if sel and sel[0] == tpl_id:
+    _sel_payload = await get_intent_json(_k_sel(cb.from_user.id))
+    if _sel_payload and int(_sel_payload.get("tpl_id", 0)) == tpl_id:
         async with session_scope() as session:
             db_user = (await session.execute(select(User).where(User.telegram_id == cb.from_user.id))).scalars().first()
             if not db_user:
                 from app.utils.username import tg_username as _tg
                 db_user = User(
                     telegram_id=cb.from_user.id,
-                    marzban_username=sel[1] or _tg(cb.from_user.id),
+                    marzban_username=str(_sel_payload.get("username") or _tg(cb.from_user.id)),
                     subscription_token=None,
                     status="active",
                     data_limit_bytes=0,
@@ -579,15 +614,15 @@ async def cb_plan_final(cb: CallbackQuery) -> None:
         pass
     # Ensure username selection applied (rename if changed) then proceed
     # Ensure DB user exists; do not rename here (multi-service)
-    sel = _PURCHASE_SELECTION.get(cb.from_user.id)
-    if sel and sel[0] == tpl_id:
+    _sel_payload = await get_intent_json(_k_sel(cb.from_user.id))
+    if _sel_payload and int(_sel_payload.get("tpl_id", 0)) == tpl_id:
         async with session_scope() as session:
             db_user = (await session.execute(select(User).where(User.telegram_id == cb.from_user.id))).scalars().first()
             if not db_user:
                 from app.utils.username import tg_username as _tg
                 db_user = User(
                     telegram_id=cb.from_user.id,
-                    marzban_username=sel[1] or _tg(cb.from_user.id),
+                    marzban_username=str(_sel_payload.get("username") or _tg(cb.from_user.id)),
                     subscription_token=None,
                     status="active",
                     data_limit_bytes=0,
@@ -602,6 +637,14 @@ async def cb_plan_cancel(cb: CallbackQuery) -> None:
     await cb.answer("❌ خرید لغو شد")
     try:
         await cb.message.edit_text("❌ خرید لغو شد")
+    except Exception:
+        pass
+    # Clear any in-flight purchase intents for this user
+    try:
+        await clear_intent(_k_sel(cb.from_user.id))
+        await clear_intent(_k_cst(cb.from_user.id))
+        await clear_intent(_k_mode(cb.from_user.id))
+        await clear_intent(_k_ext(cb.from_user.id))
     except Exception:
         pass
 
@@ -644,8 +687,12 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
         # Enough balance → create order and provision
         from app.services import marzban_ops as ops
         from app.utils.username import tg_username as _tg
-        mode_tpl = _PURCHASE_MODE.get(cb.from_user.id)
-        mode = mode_tpl[0] if mode_tpl and mode_tpl[1] == tpl_id else "new"
+        _mode_payload = await get_intent_json(_k_mode(cb.from_user.id))
+        mode = (
+            str(_mode_payload.get("mode"))
+            if (_mode_payload and int(_mode_payload.get("tpl_id", 0)) == tpl_id)
+            else "new"
+        )
         try:
             # Create order record as paid for traceability
             order = Order(
@@ -669,7 +716,8 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
             await session.flush()
             token = None
             if mode == "extend":
-                sid = _PURCHASE_EXT_SERVICE.get(cb.from_user.id)
+                _ext_payload = await get_intent_json(_k_ext(cb.from_user.id))
+                sid = int(_ext_payload.get("sid", 0)) if _ext_payload else None
                 usvc = await session.scalar(select(UserService).where(UserService.id == sid, UserService.user_id == db_user.id))
                 if not usvc:
                     await cb.message.answer("⚠️ سرویس انتخابی یافت نشد.")
@@ -684,8 +732,11 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
                         usvc.last_token = token
             else:
                 # new service: use selected username or fallback
-                chosen = _PURCHASE_SELECTION.get(cb.from_user.id)
-                username_eff = (chosen[1] if chosen and chosen[0] == tpl_id else (db_user.marzban_username or _tg(tg_id)))
+                _sel_payload = await get_intent_json(_k_sel(cb.from_user.id))
+                username_eff = (
+                    str(_sel_payload.get("username")) if (_sel_payload and int(_sel_payload.get("tpl_id", 0)) == tpl_id)
+                    else (db_user.marzban_username or _tg(tg_id))
+                )
                 info = await ops.provision_for_plan(username_eff, plan)
                 # upsert user_service by username
                 usvc = await session.scalar(select(UserService).where(UserService.user_id == db_user.id, UserService.username == username_eff))
@@ -706,6 +757,14 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
             order.status = "provisioned"
             order.paid_at = order.updated_at = order.provisioned_at = datetime.utcnow()
             await session.commit()
+            # Clear intents after successful purchase
+            try:
+                await clear_intent(_k_sel(cb.from_user.id))
+                await clear_intent(_k_cst(cb.from_user.id))
+                await clear_intent(_k_mode(cb.from_user.id))
+                await clear_intent(_k_ext(cb.from_user.id))
+            except Exception:
+                pass
         except Exception:
             await cb.message.answer("❌ خطا در فعال‌سازی پلن. لطفاً مجدداً تلاش کنید یا به ادمین اطلاع دهید.")
             await cb.answer()
@@ -780,7 +839,7 @@ async def _do_purchase(cb: CallbackQuery, tpl_id: int) -> None:
         elif sub_url:
             disp_url = sub_url
         if disp_url:
-            qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={disp_url}"
+            qr_url = BufferedInputFile(generate_qr_png(disp_url, size=400, border=2), filename="subscription_qr.png")
             try:
                 await cb.message.answer_photo(qr_url, caption="🔳 QR اشتراک")
             except Exception:

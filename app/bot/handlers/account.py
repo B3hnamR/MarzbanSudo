@@ -10,7 +10,7 @@ from decimal import Decimal
 from aiogram import Router, F
 import httpx
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
 from sqlalchemy import select, func
 
 from app.db.session import session_scope
@@ -19,7 +19,7 @@ from app.marzban.client import get_client
 from app.services.marzban_ops import revoke_sub as marz_revoke_sub
 from app.services.marzban_ops import replace_user_username as ops_replace_username
 from app.utils.username import tg_username
-from app.services.security import is_admin_uid
+from app.services.security import is_admin_uid\nfrom app.utils.qr import generate_qr_png
 
 # Optional Jalali date support
 try:
@@ -513,9 +513,9 @@ async def cb_account_qr(cb: CallbackQuery) -> None:
         await cb.answer("URL اشتراک نامعتبر است.", show_alert=True)
         return
     # Use a simple QR generation service URL (Telegram fetches by URL)
-    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={url}"
+    photo = BufferedInputFile(generate_qr_png(url, size=400, border=2), filename="subscription_qr.png")
     try:
-        await cb.message.answer_photo(qr_url, caption="🔳 QR اشتراک شما")
+        await cb.message.answer_photo(photo, caption="🔳 QR اشتراک شما")
     except Exception:
         await cb.message.answer(url)
     await cb.answer()
@@ -678,9 +678,9 @@ async def cb_account_qr_svc(cb: CallbackQuery) -> None:
     if not url:
         await cb.answer("URL اشتراک نامعتبر است.", show_alert=True)
         return
-    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={url}"
+    photo = BufferedInputFile(generate_qr_png(url, size=400, border=2), filename="subscription_qr.png")
     try:
-        await cb.message.answer_photo(qr_url, caption="🔳 QR اشتراک سرویس")
+        await cb.message.answer_photo(photo, caption="🔳 QR اشتراک سرویس")
     except Exception:
         await cb.message.answer(url)
     await cb.answer()
@@ -1012,3 +1012,7 @@ async def cb_account_rename_finish(cb: CallbackQuery) -> None:
     except Exception:
         pass
     await cb.answer("Renamed")
+
+
+
+

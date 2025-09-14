@@ -8,7 +8,7 @@ import random
 import string
 
 from aiogram import Router, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
 from sqlalchemy import select, func, desc, distinct
 
 from app.db.session import session_scope
@@ -17,6 +17,7 @@ from app.services.security import has_capability_async, CAP_WALLET_MODERATE
 from app.services import marzban_ops as ops
 from app.marzban.client import get_client
 from app.config import settings
+from app.utils.qr import generate_qr_png
 
 router = Router()
 
@@ -1136,9 +1137,9 @@ async def _provision_and_record(uid: int, tpl_id: int) -> Tuple[bool, str]:
             elif sub_url:
                 disp_url = sub_url
             if disp_url:
-                qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={disp_url}"
+                photo = BufferedInputFile(generate_qr_png(disp_url, size=400, border=2), filename="subscription_qr.png")
                 try:
-                    await router.bot.send_photo(chat_id=u2.telegram_id, photo=qr_url, caption="🔳 QR اشتراک", reply_markup=manage_kb)
+                    await router.bot.send_photo(chat_id=u2.telegram_id, photo=photo, caption="🔳 QR اشتراک", reply_markup=manage_kb)
                 except Exception:
                     await router.bot.send_message(chat_id=u2.telegram_id, text=disp_url, reply_markup=manage_kb)
             else:
@@ -1268,9 +1269,9 @@ async def _apply_username_change_and_provision(uid: int, tpl_id: int, new_userna
             elif sub_url:
                 disp_url = sub_url
             if disp_url:
-                qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={disp_url}"
+                photo = BufferedInputFile(generate_qr_png(disp_url, size=400, border=2), filename="subscription_qr.png")
                 try:
-                    await router.bot.send_photo(chat_id=u2.telegram_id, photo=qr_url, caption="🔳 QR اشتراک", reply_markup=manage_kb)
+                    await router.bot.send_photo(chat_id=u2.telegram_id, photo=photo, caption="🔳 QR اشتراک", reply_markup=manage_kb)
                 except Exception:
                     await router.bot.send_message(chat_id=u2.telegram_id, text=disp_url, reply_markup=manage_kb)
             else:
@@ -1404,3 +1405,5 @@ async def admin_users_grant_custom_username(message: Message) -> None:
             await message.bot.send_message(chat_id=u2.telegram_id, text="✅ سرویس شما توسط ادمین فعال شد.")
     except Exception:
         pass
+
+
