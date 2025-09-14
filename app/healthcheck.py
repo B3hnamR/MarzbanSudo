@@ -6,7 +6,11 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-# Healthcheck: validate ENV, token presence, and DB connectivity (SELECT 1)
+# Healthcheck: validate ENV, Telegram token presence, DB connectivity (SELECT 1),
+# and optional Marzban admin reachability.
+#
+# You can skip the Marzban check by setting HEALTHCHECK_SKIP_MARZBAN=1
+# (useful in staging or when Marzban is temporarily unavailable).
 
 async def _check_db() -> bool:
     db_url = os.getenv("DB_URL", "")
@@ -29,7 +33,7 @@ async def _check_marzban() -> bool:
     if not base or not username or not password:
         return False
     try:
-        timeout = httpx.Timeout(10.0, connect=5.0, read=5.0)
+        timeout = httpx.Timeout(12.0, connect=6.0, read=6.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             # Acquire token (form-encoded as in client.py for 0.8.4)
             resp = await client.post(
@@ -70,10 +74,15 @@ def main() -> int:
         print("db not ready", file=sys.stderr)
         return 1
 
-    ok_mz = asyncio.run(_check_marzban())
-    if not ok_mz:
-        print("marzban not ready", file=sys.stderr)
-        return 1
+    skip_mz = (os.getenv("HEALTHCHECK_SKIP_MARZBAN", "0").strip().lower() in {"1", "true", "yes", "on"})
+    if not skip_mz:
+        ok_mz = asyncio.run(_check_marzban())
+        if not ok_mz:
+            print("marzban not ready", file=sys.stderr)
+            return 1
+    else:
+        # Skipped by env
+        pass
 
     print("ok")
     return 0

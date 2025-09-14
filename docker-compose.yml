@@ -38,7 +38,8 @@ services:
       test: ["CMD", "python", "-m", "app.healthcheck"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 90s
     deploy:
       resources:
         limits:
@@ -62,10 +63,10 @@ services:
     command: python -c "import asyncio; from app.services.scheduler import run_scheduler; asyncio.run(run_scheduler())"
     healthcheck:
       test: ["CMD", "python", "-c", "import importlib; importlib.import_module('app.services.scheduler'); print('ok')"]
-      interval: 10s
-      timeout: 5s
+      interval: 20s
+      timeout: 8s
       retries: 6
-      start_period: 60s
+      start_period: 120s
     deploy:
       resources:
         limits:
