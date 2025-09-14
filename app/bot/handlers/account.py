@@ -19,7 +19,8 @@ from app.marzban.client import get_client
 from app.services.marzban_ops import revoke_sub as marz_revoke_sub
 from app.services.marzban_ops import replace_user_username as ops_replace_username
 from app.utils.username import tg_username
-from app.services.security import is_admin_uid\nfrom app.utils.qr import generate_qr_png
+from app.services.security import is_admin_uid
+from app.utils.qr import generate_qr_png
 
 # Optional Jalali date support
 try:
@@ -1012,6 +1013,7 @@ async def cb_account_rename_finish(cb: CallbackQuery) -> None:
     except Exception:
         pass
     await cb.answer("Renamed")
+
 
 
 

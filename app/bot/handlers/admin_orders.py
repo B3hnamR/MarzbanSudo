@@ -10,7 +10,8 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from sqlalchemy import select, update
 from decimal import Decimal
 
-from app.db.session import session_scope\nfrom app.utils.qr import generate_qr_png
+from app.db.session import session_scope
+from app.utils.qr import generate_qr_png
 from app.db.models import Order, User, Plan, UserService
 from app.services import marzban_ops as ops
 from app.services.audit import log_audit
