@@ -320,7 +320,7 @@ def _amount_options(min_amount: Decimal | None) -> List[Decimal]:
     return [base, base * 2, base * 5]
 
 
-async def _get_min_topup(session) -> Decimal:
+async def _get_min_topup_value(session) -> Decimal:
     row = await session.scalar(select(Setting).where(Setting.key == "MIN_TOPUP_IRR"))
     if row:
         try:
@@ -368,7 +368,7 @@ async def wallet_menu(message: Message) -> None:
             await session.flush()
             await session.commit()
         bal = Decimal(user.balance or 0)
-        min_amt = await _get_min_topup(session)
+        min_amt = await _get_min_topup_value(session)
         options = _amount_options(min_amt)
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"شارژ {int(a/10):,} تومان", callback_data=f"wallet:amt:{int(a)}")] for a in options
@@ -508,7 +508,7 @@ async def handle_wallet_custom_amount(message: Message) -> None:
         return
     rial = toman * Decimal("10")
     async with session_scope() as session:
-        min_irr = await _get_min_topup(session)
+        min_irr = await _get_min_topup_value(session)
         max_irr = await _get_max_topup(session)
     if rial < min_irr:
         await message.answer(
@@ -549,7 +549,7 @@ async def handle_wallet_custom_amount_fallback(message: Message) -> None:
         return
     rial = toman * Decimal("10")
     async with session_scope() as session:
-        min_irr = await _get_min_topup(session)
+        min_irr = await _get_min_topup_value(session)
         max_irr = await _get_max_topup(session)
     if rial < min_irr or (max_irr is not None and rial > max_irr):
         await set_intent_json(f"INTENT:TOPUP:{uid}", {"amount": "-1", "ts": datetime.utcnow().isoformat()})
@@ -568,7 +568,7 @@ async def cb_wallet_amount(cb: CallbackQuery) -> None:
         await cb.answer("مبلغ نامعتبر", show_alert=True)
         return
     async with session_scope() as session:
-        min_irr = await _get_min_topup(session)
+        min_irr = await _get_min_topup_value(session)
         max_irr = await _get_max_topup(session)
     if amount < min_irr:
         await cb.answer(
@@ -643,7 +643,7 @@ async def handle_wallet_photo(message: Message) -> None:
             )
             session.add(user)
             await session.flush()
-        min_irr = await _get_min_topup(session)
+        min_irr = await _get_min_topup_value(session)
         max_irr = await _get_max_topup(session)
         if amount < min_irr:
             await message.answer(
@@ -884,14 +884,7 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
 
 
 # Admin interactive menu for wallet settings
-async def _get_min_topup_value(session) -> Decimal:
-    row = await session.scalar(select(Setting).where(Setting.key == "MIN_TOPUP_IRR"))
-    if row:
-        try:
-            return Decimal(str(row.value))
-        except Exception:
-            return Decimal("100000")
-    return Decimal("100000")
+# _get_min_topup_value defined above and used uniformly
 
 
 async def _get_max_topup_value(session) -> Decimal | None:

@@ -194,6 +194,8 @@ def setup_logging() -> None:
         }
 
     # Build dictConfig
+    httpx_level = "WARNING" if app_env == "production" else "INFO"
+
     config: Dict[str, Any] = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -214,7 +216,7 @@ def setup_logging() -> None:
         "loggers": {
             # Reduce noise
             "aiogram": {"level": log_level},
-            "httpx": {"level": "INFO"},
+            "httpx": {"level": httpx_level},
             "sqlalchemy.engine": {"level": "WARNING"},
         },
     }
