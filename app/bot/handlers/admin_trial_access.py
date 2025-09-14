@@ -48,6 +48,8 @@ def _kb_access(mode: str) -> InlineKeyboardMarkup:
 
 
 @router.message(Command("admin_trial_access"))
+@router.message(F.text == "دسترسی تست")
+@router.message(lambda m: getattr(m, "from_user", None) and isinstance(getattr(m, "text", None), str) and ("دسترسی" in (m.text or "") and "تست" in (m.text or "")))
 async def admin_trial_access_menu(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("⛔️ دسترسی ندارید.")

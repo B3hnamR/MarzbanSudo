@@ -75,6 +75,7 @@ async def _render() -> tuple[str, InlineKeyboardMarkup]:
 
 @router.message(Command("admin_trial"))
 @router.message(F.text == "تنظیمات تست")
+@router.message(lambda m: getattr(m, "from_user", None) and isinstance(getattr(m, "text", None), str) and ("تنظیمات" in (m.text or "") and "تست" in (m.text or "")))
 async def admin_trial_menu(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("⛔️ دسترسی ندارید.")
@@ -203,4 +204,3 @@ async def msg_trial_admin_set(message: Message) -> None:
                 await message.answer("ℹ️ برای این کاربر وضعیت استفاده ثبت نشده بود.")
         await clear_intent(f"INTENT:TRIAL:RESET:{uid}")
         return
-
