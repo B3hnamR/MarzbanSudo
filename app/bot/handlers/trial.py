@@ -17,7 +17,7 @@ router = Router()
 
 @router.message(Command("trial"))
 @router.message(F.text == "🧪 دریافت تست")
-@router.message(lambda m: getattr(m, "text", None) and isinstance(getattr(m, "text", None), str) and ("دریافت" in m.text and "تست" in m.text))
+@router.message(lambda m: isinstance(getattr(m, "text", None), str) and (("دریافت" in m.text or "دريافت" in m.text) and "تست" in m.text))
 async def handle_trial(message: Message) -> None:
     if not message.from_user:
         return
@@ -77,4 +77,3 @@ async def handle_trial(message: Message) -> None:
             await message.answer("Unable to provision trial right now. Please try again later.")
     except Exception:
         await message.answer("Unable to provision trial right now. Please try again later.")
-
