@@ -30,6 +30,7 @@ def _user_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🛒 خرید سرویس"), KeyboardButton(text="📦 سفارش‌ها")],
             [KeyboardButton(text="👤 اکانت من"), KeyboardButton(text="💳 کیف پول")],
+            [KeyboardButton(text="🧪 دریافت تست")],
         ], resize_keyboard=True
     )
 
