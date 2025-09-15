@@ -276,3 +276,15 @@ async def handle_contact_share(message: Message) -> None:
         await session.commit()
     await message.answer("✅ شماره شما با موفقیت تایید شد. اکنون می‌توانید خرید را ادامه دهید.", reply_markup=_user_keyboard())
 
+
+# Bridge: also handle trial request text here to avoid any filter mismatch
+@router.message(F.text.in_({"🧪 دریافت تست", "دریافت تست", "دريافت تست"}))
+async def _btn_request_trial(message: Message) -> None:
+    try:
+        from app.bot.handlers.trial import handle_trial as _handle_trial
+        await _handle_trial(message)
+    except Exception:
+        try:
+            await message.answer("/trial")
+        except Exception:
+            pass
