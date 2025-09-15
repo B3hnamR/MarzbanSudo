@@ -64,16 +64,13 @@ def _kb(enabled: bool, one: bool) -> InlineKeyboardMarkup:
 async def _render() -> tuple[str, InlineKeyboardMarkup]:
     enabled, gb, days, one = await _load()
     txt = (
-        "🧪 تنظیمات دوره آزمایشی\n\n"
-        f"• وضعیت: {'روشن ✅' if enabled else 'خاموش ⛔️'}\n"
-        f"• حجم: {gb} گیگابایت\n"
-        f"• مدت: {days} روز\n"
-        f"• یک‌بار برای هر کاربر: {_yes_no(one)}\n"
+        "🧪 تنظیمات دوره آزمایشی ✏️\n\n"
+        f"وضعیت: {'روشن ✅' if enabled else 'خاموش ⛔️'}\n"
+        f"حجم: {gb} گیگابایت\n"
+        f"مدت: {days} روز\n"
+        f"یک‌بار برای هر کاربر: {_yes_no(one)}\n"
     )
-    return txt, _kb(enabled, one)
-
-
-@router.message(Command("admin_trial"))
+    return txt, _kb(enabled, one)@router.message(Command("admin_trial"))
 @router.message(Command("admin_trial_access"))
 @router.message(F.text == "🧪 تنظیمات تست")
 @router.message(F.text == "تنظیمات تست")

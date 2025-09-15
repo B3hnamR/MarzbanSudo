@@ -16,6 +16,18 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+async def _mark_trial_used(telegram_id: int) -> None:
+    """Persist trial usage timestamp for the given Telegram user id."""
+    async with session_scope() as session:
+        row = await session.scalar(select(Setting).where(Setting.key == f"USER:{telegram_id}:TRIAL_USED_AT"))
+        ts = datetime.utcnow().isoformat()
+        if not row:
+            session.add(Setting(key=f"USER:{telegram_id}:TRIAL_USED_AT", value=ts))
+        else:
+            row.value = ts
+        await session.commit()
+
+
 async def _get_vless_inbound_tags(client) -> list[str]:
     """Fetch inbound tags for vless protocol and filter out non-service tags like 'Info'."""
     try:
@@ -121,11 +133,9 @@ async def provision_trial(telegram_id: int) -> dict:
         }
 
         # Create if not exists; if exists, proceed to update
-        exists = False
         # Allow 409 (user exists) without raising/logging at HTTP layer to avoid noisy ERROR logs
         resp = await client._request("POST", "/api/user", allowed_statuses={409}, json=create_payload)
         if resp.status_code == 409:
-            exists = True
             logger.info("user exists; will update", extra={"extra": {"username": username}})
         else:
             logger.info("trial created (minimal)", extra={"extra": {"username": username}})
@@ -147,22 +157,14 @@ async def provision_trial(telegram_id: int) -> dict:
             logger.warning("set data_limit failed", extra={"extra": {"username": username, "status": e.response.status_code if e.response else None}})
 
         # Return current snapshot (best-effort)
+        if one_per_user:
+            try:
+                await _mark_trial_used(telegram_id)
+            except Exception:
+                pass
+
         try:
             result = await client.get_user(username)
-            # Mark trial used for user if policy is one-per-user
-            if one_per_user:
-                try:
-                    from datetime import datetime as _dt
-                    async with session_scope() as session:
-                        row = await session.scalar(select(Setting).where(Setting.key == f"USER:{telegram_id}:TRIAL_USED_AT"))
-                        ts = _dt.utcnow().isoformat()
-                        if not row:
-                            session.add(Setting(key=f"USER:{telegram_id}:TRIAL_USED_AT", value=ts))
-                        else:
-                            row.value = ts
-                        await session.commit()
-                except Exception:
-                    pass
             return result
         except Exception:
             # If fetch fails, synthesize a minimal response

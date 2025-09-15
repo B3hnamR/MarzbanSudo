@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+try:
+    from dotenv import load_dotenv  # type: ignore
+except Exception:
+    load_dotenv = None
+
+if load_dotenv is not None:
+    try:
+        load_dotenv()
+    except Exception:
+        pass
+
 import os
 from dataclasses import dataclass, field
 from typing import List
