@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 
@@ -12,12 +12,9 @@ from app.utils.username import tg_username
 router = Router()
 
 
-@router.message(Command("trial"))
+@router.message(Command("trial"))`n@router.message(F.text == "?? ?????? ???")
 async def handle_trial(message: Message) -> None:
-    if False and settings.trial_enabled:
-        await message.answer("فعلاً امکان دریافت اکانت آزمایشی فعال نیست.")
-        return
-    if not message.from_user:
+        if not message.from_user:
         return
     username = tg_username(message.from_user.id)
     await message.answer("در حال ایجاد/به‌روزرسانی اکانت آزمایشی...")
@@ -34,6 +31,7 @@ async def handle_trial(message: Message) -> None:
         await message.answer("\n".join(lines))
     except Exception:
         await message.answer("ایجاد اکانت آزمایشی با خطا مواجه شد. لطفاً کمی بعد تلاش کنید.")
+
 
 
 
