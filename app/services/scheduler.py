@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from aiojobs import create_scheduler
 import httpx
-from sqlalchemy import select, update, and_, text
+from sqlalchemy import select, update, and_
 
 from app.db.session import session_scope
 from app.db.models import User, Order
@@ -42,7 +42,6 @@ async def job_notify_usage() -> None:
         users = (await session.execute(select(User).where(User.status == "active"))).scalars().all()
         for u in users:
             try:
-                # Use username directly; token may be absent but API works with username
                 data = await mz_get_user(u.marzban_username)
                 limit = int(data.get("data_limit") or 0)
                 used = int(data.get("used_traffic") or 0)
@@ -58,9 +57,8 @@ async def job_notify_usage() -> None:
                 u.last_usage_ratio = Decimal(str(ratio))
                 u.last_notified_usage_threshold = Decimal(str(crossed))
                 await session.flush()
-                # Notify user
                 pct = int(crossed * 100)
-                await notify_user(u.telegram_id, f"هشدار مصرف: شما از {pct}% حجم سرویس عبور کرده‌اید.")
+                await notify_user(u.telegram_id, f"⚠️ اطلاعیه مصرف: شما از {pct}% حجم سرویس خود عبور کرده‌اید.")
             except httpx.HTTPStatusError as e:
                 status = getattr(getattr(e, "response", None), "status_code", None)
                 if status == 404:
@@ -100,7 +98,7 @@ async def job_notify_expiry() -> None:
                 if days_left in days_list and days_left != last_day:
                     u.last_notified_expiry_day = days_left
                     await session.flush()
-                    await notify_user(u.telegram_id, f"اطلاعیه انقضا: {days_left} روز تا پایان سرویس باقی مانده است.")
+                    await notify_user(u.telegram_id, f"⏳ اطلاعیه انقضا: {days_left} روز تا پایان سرویس باقی مانده است.")
             except httpx.HTTPStatusError as e:
                 status = getattr(getattr(e, "response", None), "status_code", None)
                 if status == 404:
@@ -116,9 +114,7 @@ async def job_notify_expiry() -> None:
 
 
 async def job_cleanup_receipts() -> None:
-    """Placeholder: If receipt files were stored locally, we'd remove them here based on settings.RECEIPT_RETENTION_DAYS.
-    Currently receipts are Telegram File IDs; no local cleanup is required. This job reports a summary only.
-    """
+    """Placeholder cleanup; receipts are Telegram File IDs (no local files)."""
     days = settings.receipt_retention_days
     logger.debug("cleanup_receipts: retention=%s days; telegram file-id only, skipping disk cleanup", days)
 
@@ -148,7 +144,7 @@ async def run_scheduler() -> None:
             try:
                 await coro()
             except Exception as e:
-                    logger.exception("periodic job error: %s", e)
+                logger.exception("periodic job error: %s", e)
             await asyncio.sleep(interval)
 
     # Schedule periodic jobs
@@ -170,3 +166,4 @@ async def run_scheduler() -> None:
         except Exception:
             pass
         raise
+
