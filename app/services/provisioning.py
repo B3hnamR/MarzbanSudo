@@ -122,20 +122,13 @@ async def provision_trial(telegram_id: int) -> dict:
 
         # Create if not exists; if exists, proceed to update
         exists = False
-        try:
-            resp = await client._request("POST", "/api/user", json=create_payload)
+        # Allow 409 (user exists) without raising/logging at HTTP layer to avoid noisy ERROR logs
+        resp = await client._request("POST", "/api/user", allowed_statuses={409}, json=create_payload)
+        if resp.status_code == 409:
+            exists = True
+            logger.info("user exists; will update", extra={"extra": {"username": username}})
+        else:
             logger.info("trial created (minimal)", extra={"extra": {"username": username}})
-        except httpx.HTTPStatusError as e:
-            if e.response is not None and e.response.status_code == 409:
-                exists = True
-                logger.info("user exists; will update", extra={"extra": {"username": username}})
-            else:
-                # If non-409 on create, check if user actually exists; otherwise re-raise
-                try:
-                    await client.get_user(username)
-                    exists = True
-                except httpx.HTTPStatusError:
-                    raise
 
         # Stage updates (expire then data_limit) if limits configured
         expire_ts = int((datetime.now(timezone.utc) + timedelta(days=duration_days)).timestamp()) if duration_days > 0 else 0
