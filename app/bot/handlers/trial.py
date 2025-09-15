@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import html
@@ -98,7 +98,6 @@ async def handle_trial(message: Message) -> None:
 
         if links:
             encoded = [html.escape(str(ln).strip()) for ln in links if str(ln).strip()]
-            blocks = [f"<pre>{e}</pre>"]
             blocks = [f"<pre>{e}</pre>" for e in encoded]
             header = "📄 کانفیگ‌ها:\n\n"
             body = header + "\n\n".join(blocks)
