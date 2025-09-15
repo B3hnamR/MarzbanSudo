@@ -73,7 +73,7 @@ async def _render() -> tuple[str, InlineKeyboardMarkup]:
     return txt, _kb(enabled, one)
 
 
-@router.message(Command("admin_trial"))
+@router.message(Command("admin_trial"))`n@router.message(Command("admin_trial_access"))
 @router.message(F.text == "تنظیمات تست")
 @router.message(lambda m: getattr(m, "from_user", None) and isinstance(getattr(m, "text", None), str) and ("تنظیمات" in (m.text or "") and "تست" in (m.text or "")))
 async def admin_trial_menu(message: Message) -> None:
@@ -207,5 +207,6 @@ async def msg_trial_admin_set(message: Message) -> None:
 
     # No matching trial admin intent; do not swallow other commands/handlers
     return
+
 
 
