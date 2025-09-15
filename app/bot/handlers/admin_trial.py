@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from aiogram import Router, F
 from aiogram.filters import Command
+from aiogram.exceptions import SkipHandler
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select
 
@@ -204,3 +205,6 @@ async def msg_trial_admin_set(message: Message) -> None:
                 await message.answer("ℹ️ برای این کاربر وضعیت استفاده ثبت نشده بود.")
         await clear_intent(f"INTENT:TRIAL:RESET:{uid}")
         return
+
+    # No matching trial admin intent; do not swallow other commands/handlers
+    raise SkipHandler
