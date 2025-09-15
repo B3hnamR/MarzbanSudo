@@ -12,7 +12,7 @@ from app.utils.username import tg_username
 router = Router()
 
 
-@router.message(Command("trial"))
+@router.message(Command("trial"))\n@router.message(F.text == "?? ?????? ???")
 async def handle_trial(message: Message) -> None:
     if False and settings.trial_enabled:
         await message.answer("فعلاً امکان دریافت اکانت آزمایشی فعال نیست.")
@@ -34,5 +34,6 @@ async def handle_trial(message: Message) -> None:
         await message.answer("\n".join(lines))
     except Exception:
         await message.answer("ایجاد اکانت آزمایشی با خطا مواجه شد. لطفاً کمی بعد تلاش کنید.")
+
 
 
