@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.exceptions import SkipHandler
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select
 
@@ -157,4 +156,4 @@ async def msg_trial_access_ops(message: Message) -> None:
             return
 
     # No active trial access intent; let other handlers run
-    raise SkipHandler
+    return

@@ -94,19 +94,20 @@ async def main() -> None:
 
     dp.include_router(router)
     dp.include_router(start_handlers.router)
-    dp.include_router(plans_handlers.router)
-    dp.include_router(account_handlers.router)
+    # Place admin and control routers before generic message catch-alls
     dp.include_router(admin_handlers.router)
     dp.include_router(admin_manage_handlers.router)
-    dp.include_router(orders_handlers.router)
     dp.include_router(admin_orders_handlers.router)
-    dp.include_router(trial_handlers.router)
-    # Important: include admin_users before wallet to ensure its numeric handlers
-    # capture admin intents prior to wallet's generic numeric handler
     dp.include_router(admin_users_handlers.router)
-    dp.include_router(wallet_handlers.router)
     dp.include_router(admin_trial_handlers.router)
     dp.include_router(admin_trial_access_handlers.router)
+    # Functional user flows
+    dp.include_router(orders_handlers.router)
+    dp.include_router(account_handlers.router)
+    dp.include_router(wallet_handlers.router)
+    dp.include_router(trial_handlers.router)
+    # Plans last to avoid its generic text handler swallowing commands
+    dp.include_router(plans_handlers.router)
 
     # Polling startup
     logging.info("Starting Telegram bot polling ...")

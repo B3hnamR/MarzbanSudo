@@ -15,7 +15,6 @@ from app.utils.intent_store import set_intent_json, get_intent_json, clear_inten
 from app.marzban.client import get_client
 
 from aiogram import Router, F
-from aiogram.exceptions import SkipHandler
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from sqlalchemy import select
@@ -396,8 +395,8 @@ async def msg_plan_uname_custom(message: Message) -> None:
     user_id = message.from_user.id
     payload = await get_intent_json(_k_cst(user_id))
     if not (payload and isinstance(payload, dict) and payload.get("tpl_id")):
-        # Not our context: let other handlers process (do NOT swallow commands)
-        raise SkipHandler
+        # Not our context; ignore silently so other routers/handlers process
+        return
     tpl_id = int(payload.get("tpl_id"))
     uname = (message.text or "").strip()
     if not re.fullmatch(r"[a-z0-9]{6,}", uname):
