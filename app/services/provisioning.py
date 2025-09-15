@@ -45,7 +45,7 @@ async def provision_trial(telegram_id: int) -> dict:
     enabled = settings.trial_enabled
     data_gb = settings.trial_data_gb
     duration_days = settings.trial_duration_days
-    one_per_user = False
+    one_per_user = True
     access_mode = "public"  # public | whitelist
     try:
         async with session_scope() as session:
