@@ -47,10 +47,12 @@ INFO_PREFIX = "\u200Fℹ️ "
 def _text_matches(value: str | None, target: str) -> bool:
     if not isinstance(value, str):
         return False
-    return value.replace("\u200c", "").strip() == target
+    normalized = value.replace("\u200c", "").replace("\u200f", "").strip()
+    return normalized == target
 
 
 @router.message(F.text == "➕ شارژ دستی")
+@router.message(lambda m: _text_matches(getattr(m, "text", None), "➕ شارژ دستی"))
 async def admin_wallet_manual_add_start(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("⛔️ شما دسترسی ادمین ندارید.")
@@ -132,6 +134,7 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
                 )
                 session.add(user)
                 await session.flush()
+                await session.commit()
                 created = True
         else:
             user = await session.scalar(select(User).where(User.marzban_username == norm))
@@ -139,6 +142,7 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
             await message.answer("کاربر یافت نشد. مجدد شناسه صحیح را ارسال کنید یا لغو کنید.")
             return
         await set_intent_json(f"INTENT:WADM:{admin_id}", {"stage": "await_unit", "user_id": int(user.id), "unit": None, "ts": datetime.utcnow().isoformat()})
+    _WALLET_MANUAL_ADD_INTENT[admin_id] = {**_WALLET_MANUAL_ADD_INTENT.get(admin_id, {"active": True}), "active": True, "stage": "await_unit"}
     if created:
         await message.answer(f"👤 کاربر جدید با شناسه {user.marzban_username} ایجاد شد.")
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="ورود مبلغ به تومان", callback_data="walletadm:add:unit:TMN"), InlineKeyboardButton(text="ورود مبلغ به ریال", callback_data="walletadm:add:unit:IRR")]])
