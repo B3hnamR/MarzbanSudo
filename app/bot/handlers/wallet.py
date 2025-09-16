@@ -41,6 +41,15 @@ def _normalize_amount(txt: str) -> str:
 _WALLET_MANUAL_ADD_INTENT: Dict[int, Dict[str, object]] = {}
 
 
+INFO_PREFIX = "\u200Fℹ️ "
+
+
+def _text_matches(value: str | None, target: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    return value.replace("\u200c", "").strip() == target
+
+
 @router.message(F.text == "➕ شارژ دستی")
 async def admin_wallet_manual_add_start(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
@@ -106,15 +115,32 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
     if not (norm.isdigit() or re.fullmatch(r"[a-z0-9_]{3,}", norm or "")):
         return
     async with session_scope() as session:
+        created = False
         user = None
         if norm.isdigit():
             user = await session.scalar(select(User).where(User.telegram_id == int(norm)))
+            if not user:
+                tg_value = int(norm)
+                username = tg_username(tg_value)
+                user = User(
+                    telegram_id=tg_value,
+                    marzban_username=username,
+                    subscription_token=None,
+                    status="active",
+                    data_limit_bytes=0,
+                    balance=0,
+                )
+                session.add(user)
+                await session.flush()
+                created = True
         else:
             user = await session.scalar(select(User).where(User.marzban_username == norm))
         if not user:
             await message.answer("کاربر یافت نشد. مجدد شناسه صحیح را ارسال کنید یا لغو کنید.")
             return
         await set_intent_json(f"INTENT:WADM:{admin_id}", {"stage": "await_unit", "user_id": int(user.id), "unit": None, "ts": datetime.utcnow().isoformat()})
+    if created:
+        await message.answer(f"👤 کاربر جدید با شناسه {user.marzban_username} ایجاد شد.")
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="ورود مبلغ به تومان", callback_data="walletadm:add:unit:TMN"), InlineKeyboardButton(text="ورود مبلغ به ریال", callback_data="walletadm:add:unit:IRR")]])
     await message.answer("💱 واحد مبلغ را انتخاب کنید:", reply_markup=kb)
 
@@ -280,7 +306,7 @@ async def admin_wallet_pending_topups(message: Message) -> None:
             )
         ).all()
     if not rows:
-        await message.answer("ℹ️ هیچ درخواستی برای بررسی موجود نیست.")
+        await message.answer(f"{INFO_PREFIX}هیچ درخواستی برای بررسی موجود نیست.")
         return
     for topup, user in rows:
         tmn = int((Decimal(topup.amount or 0) / Decimal("10")).to_integral_value())
@@ -914,6 +940,7 @@ def _admin_wallet_keyboard(min_irr: Decimal, max_irr: Decimal | None) -> InlineK
 
 
 @router.message(F.text == "💼 تنظیمات کیف پول")
+@router.message(lambda m: _text_matches(getattr(m, "text", None), "💼 تنظیمات کیف پول"))
 async def admin_wallet_settings_menu(message: Message) -> None:
     logger.info("wallet.admin_settings_menu: enter", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):

@@ -24,6 +24,9 @@ router = Router()
 import logging
 logger = logging.getLogger(__name__)
 
+INFO_PREFIX = "‏ℹ️ "
+NO_RECENT_ORDERS_MSG = f"{INFO_PREFIX}سفارشی برای نمایش وجود ندارد."
+
 PAGE_SIZE_RECENT = 5
 
 
@@ -54,7 +57,11 @@ async def admin_orders_recent(message: Message) -> None:
         await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     page = 1
-    await _send_recent_orders_page(message, page)
+    text, kb = await _build_recent_orders_page(page)
+    if text is None:
+        await message.answer(NO_RECENT_ORDERS_MSG)
+    else:
+        await message.answer(text, reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("admin:orders:page:"))
@@ -66,16 +73,28 @@ async def cb_admin_orders_page(cb: CallbackQuery) -> None:
         page = int(cb.data.split(":")[3])
     except Exception:
         page = 1
-    await _send_recent_orders_page(cb.message, page)
+    text, kb = await _build_recent_orders_page(page)
+    if text is None:
+        try:
+            await cb.message.edit_text(NO_RECENT_ORDERS_MSG)
+        except Exception:
+            await cb.message.answer(NO_RECENT_ORDERS_MSG)
+        try:
+            await cb.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+    else:
+        try:
+            await cb.message.edit_text(text, reply_markup=kb)
+        except Exception:
+            await cb.message.answer(text, reply_markup=kb)
     await cb.answer()
 
 
-async def _send_recent_orders_page(target, page: int) -> None:
-    # target can be Message or CallbackQuery.message
+async def _build_recent_orders_page(page: int) -> tuple[str | None, InlineKeyboardMarkup | None]:
     if page < 1:
         page = 1
     async with session_scope() as session:
-        # Fetch one extra to detect next page
         stmt = (
             select(Order, User, Plan)
             .join(User, Order.user_id == User.id)
@@ -88,8 +107,7 @@ async def _send_recent_orders_page(target, page: int) -> None:
     has_next = len(rows_all) > PAGE_SIZE_RECENT
     rows = rows_all[:PAGE_SIZE_RECENT]
     if not rows:
-        await target.answer("سفارشی برای نمایش وجود ندارد.")
-        return
+        return None, None
     lines = [f"📦 سفارش‌های اخیر • صفحه {page}"]
     for o, u, p in rows:
         title = p.title if p else (o.plan_title or "-")
@@ -103,19 +121,14 @@ async def _send_recent_orders_page(target, page: int) -> None:
             f"👤 کاربر: {u.marzban_username} (tg:{u.telegram_id})",
         ]
         lines.append("\n".join(block))
-        lines.append("")  # blank line between orders
-    # Nav buttons
+        lines.append("")
     nav = []
     if page > 1:
         nav.append(InlineKeyboardButton(text="◀️ قبلی", callback_data=f"admin:orders:page:{page-1}"))
     if has_next:
         nav.append(InlineKeyboardButton(text="بعدی ▶️", callback_data=f"admin:orders:page:{page+1}"))
     kb = InlineKeyboardMarkup(inline_keyboard=[nav] if nav else [])
-    await target.answer("\n".join(lines), reply_markup=kb)
-
-
-
-
+    return "\n".join(lines), kb
 
 
 def _token_from_subscription_url(url: Optional[str]) -> Optional[str]:

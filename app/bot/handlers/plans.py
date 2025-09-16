@@ -28,6 +28,9 @@ from app.utils.username import tg_username
 from app.config import settings
 
 
+INFO_PREFIX = "\u200Fℹ️ "
+
+
 router = Router()
 
 PAGE_SIZE = 5
@@ -65,7 +68,7 @@ async def _send_plans_page(message: Message, page: int) -> None:
     async with session_scope() as session:
         all_plans = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
         if not all_plans:
-            await message.answer("ℹ️ هیچ پلنی موجود نیست.")
+            await message.answer(f"{INFO_PREFIX}هیچ پلنی موجود نیست.")
             return
         total = len(all_plans)
         pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
@@ -105,7 +108,7 @@ async def handle_plans(message: Message) -> None:
         async with session_scope() as session:
             rows = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
             if not rows:
-                await message.answer("ℹ️ هیچ پلن فعالی در دسترس نیست.")
+                await message.answer(f"{INFO_PREFIX}هیچ پلن فعالی در دسترس نیست.")
                 return
             # send paginated list (page 1)
         await _send_plans_page(message, 1)
@@ -125,9 +128,9 @@ async def cb_plan_page(cb: CallbackQuery) -> None:
         all_plans = (await session.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.template_id))).scalars().all()
         if not all_plans:
             try:
-                await cb.message.edit_text("ℹ️ هیچ پلنی موجود نیست.")
+                await cb.message.edit_text(f"{INFO_PREFIX}هیچ پلنی موجود نیست.")
             except Exception:
-                await cb.message.answer("ℹ️ هیچ پلنی موجود نیست.")
+                await cb.message.answer(f"{INFO_PREFIX}هیچ پلنی موجود نیست.")
             await cb.answer()
             return
         total = len(all_plans)
