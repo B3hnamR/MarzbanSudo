@@ -189,7 +189,7 @@ async def _btn_admin_wallet_settings(message: Message) -> None:
     await wallet_settings_handler(message)
 
 # Bridge: Admin manual-add flow — capture numeric tg_id/username in await_ref stage
-@router.message(F.text.regexp(r"^(?:\d{5,}|[A-Za-z0-9_]{3,})$"))
+@router.message(F.text.regexp(r"^(?:\d{5,}|[A-Za-z0-9_]{3,})$"), flags={"block": False})
 async def _bridge_wallet_manual_add_ref(message: Message) -> None:
     if not message.from_user:
         return
