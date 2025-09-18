@@ -213,22 +213,33 @@ async def _bridge_wallet_numeric(message: Message) -> None:
     """
     if not message.from_user:
         return
+    uid = getattr(message.from_user, "id", None)
+    if not uid:
+        return
+
+    # 1) Admin manual add amount stage (short-circuit on success)
     try:
-        from app.utils.intent_store import get_intent_json
-        uid = message.from_user.id
-        # 1) Admin manual add amount stage
-        wadm = await get_intent_json(f"INTENT:WADM:{uid}")
+        from app.utils.intent_store import get_intent_json as _get_intent
+        wadm = await _get_intent(f"INTENT:WADM:{uid}")
         if wadm and wadm.get("stage") == "await_amount":
             await wallet_manual_add_amount_handler(message)
             return
-        # 2) Admin limits (min/max). If flags inactive, handler will simply no-op.
+    except Exception:
+        pass
+
+    # 2) Admin limits (min/max). Do not block other flows on errors
+    try:
         await wallet_limits_numeric_input_handler(message)
-        # 3) User custom amount (only when active)
-        topup = await get_intent_json(f"INTENT:TOPUP:{uid}")
+    except Exception:
+        pass
+
+    # 3) User custom amount (only when active). Independent of limits outcome
+    try:
+        from app.utils.intent_store import get_intent_json as _get_intent
+        topup = await _get_intent(f"INTENT:TOPUP:{uid}")
         if topup and str(topup.get("amount")) == "-1":
             await wallet_custom_amount_handler(message)
     except Exception:
-        # fail-safe: do nothing
         pass
 
 
