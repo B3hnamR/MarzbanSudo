@@ -3,7 +3,7 @@ import logging
 import os
 from typing import List
 
-from aiogram import Bot, Dispatcher, Router
+from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 
@@ -104,12 +104,10 @@ async def main() -> None:
         dp.message.register(
             _numeric_bridge_entry,
             F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]{0,13}$"),
-            flags={"block": False},
         )
         dp.message.register(
             _numeric_bridge_entry,
             F.text.regexp(r".*[0-9\u06F0-\u06F9].*"),
-            flags={"block": False},
         )
     except Exception:
         pass
