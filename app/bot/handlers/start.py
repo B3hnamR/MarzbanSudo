@@ -23,6 +23,8 @@ from app.bot.handlers.wallet import (
     admin_wallet_settings_menu as wallet_settings_handler,
     admin_wallet_manual_add_ref as wallet_manual_add_ref,
     handle_wallet_custom_amount as wallet_custom_amount_handler,
+    admin_wallet_manual_add_amount as wallet_manual_add_amount_handler,
+    admin_wallet_limits_numeric_input as wallet_limits_numeric_input_handler,
 )
 
 router = Router()
@@ -200,15 +202,30 @@ async def _bridge_wallet_manual_add_ref(message: Message) -> None:
         # fail-safe: do nothing
         pass
 
-# Bridge: Wallet custom amount — capture numeric when TOPUP.amount == -1
+# Bridge: Wallet numeric routing — prioritize admin/manual and then user custom
 @router.message(F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]{0,13}$"))
-async def _bridge_wallet_custom_amount(message: Message) -> None:
+async def _bridge_wallet_numeric(message: Message) -> None:
+    """Route numeric messages deterministically to the right wallet flow.
+    Priority:
+      1) Admin manual add amount (WADM stage=await_amount)
+      2) Admin min/max intents (wallet limits numeric input)
+      3) User custom top-up amount (TOPUP.amount == -1)
+    """
     if not message.from_user:
         return
     try:
         from app.utils.intent_store import get_intent_json
-        payload = await get_intent_json(f"INTENT:TOPUP:{message.from_user.id}")
-        if payload and str(payload.get("amount")) == "-1":
+        uid = message.from_user.id
+        # 1) Admin manual add amount stage
+        wadm = await get_intent_json(f"INTENT:WADM:{uid}")
+        if wadm and wadm.get("stage") == "await_amount":
+            await wallet_manual_add_amount_handler(message)
+            return
+        # 2) Admin limits (min/max). If flags inactive, handler will simply no-op.
+        await wallet_limits_numeric_input_handler(message)
+        # 3) User custom amount (only when active)
+        topup = await get_intent_json(f"INTENT:TOPUP:{uid}")
+        if topup and str(topup.get("amount")) == "-1":
             await wallet_custom_amount_handler(message)
     except Exception:
         # fail-safe: do nothing
