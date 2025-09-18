@@ -85,5 +85,5 @@ async def test_wallet_custom_amount_bridge(monkeypatch):
         text = "76000"
         from_user = DummyFrom()
 
-    await start_handlers._bridge_wallet_custom_amount(DummyMessage())
+    await start_handlers._bridge_wallet_numeric(DummyMessage())
     assert called["custom"] is True
