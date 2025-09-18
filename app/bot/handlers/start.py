@@ -227,17 +227,39 @@ async def _bridge_wallet_numeric(message: Message) -> None:
         pass
 
     # 1) Admin manual add amount stage (short-circuit on success)
+    # 1.a) In-memory flag check (strongest)
+    try:
+        from app.bot.handlers import wallet as _wmod
+        st = (_wmod._WALLET_MANUAL_ADD_INTENT.get(uid, {}) or {}).get("stage")  # type: ignore[attr-defined]
+        if st == "await_amount":
+            logger.info("start.bridge.numeric.path", extra={"extra": {"uid": uid, "path": "wadm-memory"}})
+            await wallet_manual_add_amount_handler(message)
+            return
+    except Exception:
+        pass
+    # 1.b) DB-backed intent check
     try:
         from app.utils.intent_store import get_intent_json as _get_intent
         wadm = await _get_intent(f"INTENT:WADM:{uid}")
         if wadm and wadm.get("stage") == "await_amount":
+            logger.info("start.bridge.numeric.path", extra={"extra": {"uid": uid, "path": "wadm-db"}})
             await wallet_manual_add_amount_handler(message)
             return
     except Exception:
         pass
 
+    # 1.c) Admin limits in-memory flags (optional fast-path)
+    try:
+        from app.bot.handlers import wallet as _wmod
+        if _wmod._WALLET_ADMIN_MIN_INTENT.get(uid, False) or _wmod._WALLET_ADMIN_MAX_INTENT.get(uid, False):  # type: ignore[attr-defined]
+            logger.info("start.bridge.numeric.path", extra={"extra": {"uid": uid, "path": "limits-memory"}})
+            await wallet_limits_numeric_input_handler(message)
+    except Exception:
+        pass
+
     # 2) Admin limits (min/max). Do not block other flows on errors
     try:
+        logger.info("start.bridge.numeric.path", extra={"extra": {"uid": uid, "path": "limits"}})
         await wallet_limits_numeric_input_handler(message)
     except Exception:
         pass
@@ -247,6 +269,7 @@ async def _bridge_wallet_numeric(message: Message) -> None:
         from app.utils.intent_store import get_intent_json as _get_intent
         topup = await _get_intent(f"INTENT:TOPUP:{uid}")
         if topup and str(topup.get("amount")) == "-1":
+            logger.info("start.bridge.numeric.path", extra={"extra": {"uid": uid, "path": "custom"}})
             await wallet_custom_amount_handler(message)
     except Exception:
         pass
