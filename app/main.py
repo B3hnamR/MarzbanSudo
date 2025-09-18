@@ -91,6 +91,29 @@ async def main() -> None:
     dp.message.middleware(rate_limiter)
     dp.callback_query.middleware(rate_limiter)
 
+    # High-priority numeric bridge: route numeric texts to start router bridge before other routers
+    async def _numeric_bridge_entry(message: Message) -> None:
+        try:
+            from app.bot.handlers import start as start_handlers  # local import to avoid cycles
+            await start_handlers._bridge_wallet_numeric(message)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    # Strict numeric (ASCII/Persian digits), then permissive fallback (any text containing digits)
+    try:
+        dp.message.register(
+            _numeric_bridge_entry,
+            F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]{0,13}$"),
+            flags={"block": False},
+        )
+        dp.message.register(
+            _numeric_bridge_entry,
+            F.text.regexp(r".*[0-9\u06F0-\u06F9].*"),
+            flags={"block": False},
+        )
+    except Exception:
+        pass
+
     dp.include_router(router)
     dp.include_router(start_handlers.router)
     # Place admin and control routers before generic message catch-alls
