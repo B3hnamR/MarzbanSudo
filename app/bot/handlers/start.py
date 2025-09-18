@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -28,6 +29,8 @@ from app.bot.handlers.wallet import (
 )
 
 router = Router()
+
+logger = logging.getLogger(__name__)
 
 
 def _is_admin(msg: Message) -> bool:
@@ -217,6 +220,12 @@ async def _bridge_wallet_numeric(message: Message) -> None:
     if not uid:
         return
 
+    # Entry log (best-effort)
+    try:
+        logger.info("start.bridge.numeric.enter", extra={"extra": {"uid": uid, "text": (message.text or "")[:64]}})
+    except Exception:
+        pass
+
     # 1) Admin manual add amount stage (short-circuit on success)
     try:
         from app.utils.intent_store import get_intent_json as _get_intent
@@ -242,6 +251,15 @@ async def _bridge_wallet_numeric(message: Message) -> None:
     except Exception:
         pass
 
+
+# Fallback bridge: any text containing digits; non-blocking so other handlers can still proceed if needed
+@router.message(F.text.regexp(r".*[0-9\u06F0-\u06F9].*"), flags={"block": False})
+async def _bridge_wallet_numeric_fallback(message: Message) -> None:
+    try:
+        await _bridge_wallet_numeric(message)
+    except Exception:
+        # never break pipeline due to bridge
+        pass
 
 @router.callback_query(F.data == "chk:chan")
 async def cb_check_channel(cb: CallbackQuery) -> None:
