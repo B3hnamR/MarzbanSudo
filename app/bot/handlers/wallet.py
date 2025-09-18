@@ -47,8 +47,10 @@ INFO_PREFIX = "\u200Fℹ️ "
 def _text_matches(value: str | None, target: str) -> bool:
     if not isinstance(value, str):
         return False
-    normalized = value.replace("\u200c", "").replace("\u200f", "").strip()
-    return normalized == target
+    remove_map = str.maketrans('', '', '\u200c\u200f\u202a\u202b\u202c\u202d\u202e\ufeff\ufe0f')
+    normalized = value.translate(remove_map).strip()
+    target_normalized = target.translate(remove_map).strip()
+    return normalized == target_normalized
 
 
 @router.message(F.text == "➕ شارژ دستی")
