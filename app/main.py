@@ -112,7 +112,7 @@ async def main() -> None:
             pass
 
     try:
-        dp.message.register(_cpw_bridge_entry, F.text, flags={"block": True})
+        dp.message.register(_cpw_bridge_entry, F.text)
     except Exception:
         pass
 
