@@ -231,6 +231,10 @@ async def _bridge_wallet_numeric(message: Message) -> None:
     try:
         from app.bot.handlers import wallet as _wmod
         st = (_wmod._WALLET_MANUAL_ADD_INTENT.get(uid, {}) or {}).get("stage")  # type: ignore[attr-defined]
+        try:
+            logger.info("start.bridge.numeric.mem", extra={"extra": {"uid": uid, "stage": st}})
+        except Exception:
+            pass
         if st == "await_amount":
             logger.info("start.bridge.numeric.path", extra={"extra": {"uid": uid, "path": "wadm-memory"}})
             await wallet_manual_add_amount_handler(message)
@@ -241,8 +245,26 @@ async def _bridge_wallet_numeric(message: Message) -> None:
     try:
         from app.utils.intent_store import get_intent_json as _get_intent
         wadm = await _get_intent(f"INTENT:WADM:{uid}")
+        try:
+            _st = str(wadm.get("stage") if wadm else "")
+            _un = str(wadm.get("unit") if wadm else "")
+            logger.info("start.bridge.numeric.db", extra={"extra": {"uid": uid, "stage": _st, "unit": _un}})
+        except Exception:
+            pass
         if wadm and wadm.get("stage") == "await_amount":
             logger.info("start.bridge.numeric.path", extra={"extra": {"uid": uid, "path": "wadm-db"}})
+            await wallet_manual_add_amount_handler(message)
+            return
+    except Exception:
+        pass
+
+    # 1.d) Heuristic: if WADM has a valid unit (TMN/IRR), treat numeric text as amount
+    try:
+        from app.utils.intent_store import get_intent_json as _get_intent
+        _wadm_h = await _get_intent(f"INTENT:WADM:{uid}")
+        _unit = str(_wadm_h.get("unit") if _wadm_h else "")
+        if _unit in {"TMN", "IRR"}:
+            logger.info("start.bridge.numeric.path", extra={"extra": {"uid": uid, "path": "wadm-heuristic"}})
             await wallet_manual_add_amount_handler(message)
             return
     except Exception:
