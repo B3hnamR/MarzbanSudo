@@ -139,9 +139,8 @@ class AuditLog(Base):
     target_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     meta: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-+
-+
-+# ==== Discounts (Phase 1 MVP) ====
+
+# ==== Discounts (Phase 1 MVP) ====
 class Coupon(Base):
     __tablename__ = "coupons"
 
