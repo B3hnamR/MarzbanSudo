@@ -182,6 +182,18 @@ async def _btn_admin_plans_manage(message: Message) -> None:
 async def _btn_admin_recent_orders(message: Message) -> None:
     await admin_recent_handler(message)
 
+@router.message(F.text == "🎟️ کدهای تخفیف")
+async def _btn_admin_coupons_bridge(message: Message) -> None:
+    if not _is_admin(message):
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
+        return
+    try:
+        from app.bot.handlers import admin_coupons as _ac
+        await _ac._admin_coupons_entry(message)  # type: ignore[attr-defined]
+    except Exception:
+        # اگر به هر دلیل فراخوانی مستقیم شکست خورد، پیغام راهنما نمایش داده می‌شود
+        await message.answer("🎟️ مدیریت کدهای تخفیف")
+
 # Admin Settings Hub
 
 def _admin_settings_keyboard() -> ReplyKeyboardMarkup:

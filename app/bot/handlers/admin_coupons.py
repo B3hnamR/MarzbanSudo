@@ -101,7 +101,7 @@ async def _render_list(msg: Message, page: int = 1) -> None:
 
 # ============ Entry/Navigation ============ #
 
-@router.message(F.text == "🎟️ کدهای تخفیف")
+@router.message(F.text.regexp(r".*(?:ک|ك)دها(?:ی|ي)\s+تخف(?:ی|ي)ف.*"))
 async def _admin_coupons_entry(message: Message) -> None:
     if not (message.from_user and is_admin_uid(message.from_user.id)):
         await message.answer("⛔️ شما دسترسی ادمین ندارید.")
