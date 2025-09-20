@@ -107,11 +107,12 @@ async def main() -> None:
             if stage in {"await_code", "await_value", "await_cap", "await_min", "await_title"}:
                 from app.bot.handlers import admin_coupons as _ac
                 await _ac._msg_wizard_capture(message)  # type: ignore[attr-defined]
+                return
         except Exception:
             pass
 
     try:
-        dp.message.register(_cpw_bridge_entry, F.text)
+        dp.message.register(_cpw_bridge_entry, F.text, flags={"block": True})
     except Exception:
         pass
 
