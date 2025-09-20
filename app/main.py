@@ -91,6 +91,23 @@ async def main() -> None:
     dp.message.middleware(rate_limiter)
     dp.callback_query.middleware(rate_limiter)
 
+    # High-priority coupons wizard bridge: route any text to coupon wizard when active
+    async def _cpw_bridge_entry(message: Message) -> None:
+        try:
+            from app.utils.intent_store import get_intent_json as _get_intent
+            uid = getattr(getattr(message, "from_user", None), "id", None)
+            cpw = await _get_intent(f"INTENT:CPW:{uid}") if uid else None
+            if cpw:
+                from app.bot.handlers import admin_coupons as _ac
+                await _ac._msg_wizard_capture(message)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    try:
+        dp.message.register(_cpw_bridge_entry, F.text)
+    except Exception:
+        pass
+
     # High-priority numeric bridge: route numeric texts to start router bridge before other routers
     async def _numeric_bridge_entry(message: Message) -> None:
         try:
