@@ -194,6 +194,7 @@ def _admin_settings_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="⚙️ مدیریت پلن‌ها")],
             [KeyboardButton(text="➕ شارژ دستی")],
             [KeyboardButton(text="📦 سفارش‌های اخیر")],
+            [KeyboardButton(text="🎟️ کدهای تخفیف")],
             [KeyboardButton(text="⬅️ بازگشت")],
         ], resize_keyboard=True
     )

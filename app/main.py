@@ -131,6 +131,9 @@ async def main() -> None:
     dp.include_router(admin_orders_handlers.router)
     dp.include_router(admin_users_handlers.router)
     dp.include_router(admin_trial_handlers.router)
+    # Coupons admin
+    from app.bot.handlers import admin_coupons as admin_coupons_handlers
+    dp.include_router(admin_coupons_handlers.router)
     # Functional user flows
     dp.include_router(orders_handlers.router)
     dp.include_router(account_handlers.router)

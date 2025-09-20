@@ -139,3 +139,48 @@ class AuditLog(Base):
     target_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     meta: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
++
++
++# ==== Discounts (Phase 1 MVP) ====
+class Coupon(Base):
+    __tablename__ = "coupons"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    title: Mapped[Optional[str]] = mapped_column(String(191), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # type: "percent" | "fixed"
+    type: Mapped[str] = mapped_column(String(16), default="percent")
+    # value: percent in [0,100] for percent type; IRR amount for fixed type
+    value: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    # cap: maximum discount amount (IRR), nullable
+    cap: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(8), default="IRR")
+
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    start_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    end_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+
+    min_order_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    max_uses: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_uses_per_user: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    is_stackable: Mapped[bool] = mapped_column(Boolean, default=False)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CouponRedemption(Base):
+    __tablename__ = "coupon_redemptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    coupon_id: Mapped[int] = mapped_column(ForeignKey("coupons.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    order_id: Mapped[Optional[int]] = mapped_column(ForeignKey("orders.id"), nullable=True)
+
+    applied_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    status: Mapped[str] = mapped_column(String(16), default="applied")  # applied|reversed
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
