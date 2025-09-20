@@ -94,10 +94,17 @@ async def main() -> None:
     # High-priority coupons wizard bridge: route any text to coupon wizard when active
     async def _cpw_bridge_entry(message: Message) -> None:
         try:
+            # Only delegate for plain text (not commands) and when wizard expects text
+            txt = getattr(message, "text", None)
+            if not isinstance(txt, str) or txt.startswith("/"):
+                return
             from app.utils.intent_store import get_intent_json as _get_intent
             uid = getattr(getattr(message, "from_user", None), "id", None)
             cpw = await _get_intent(f"INTENT:CPW:{uid}") if uid else None
-            if cpw:
+            if not cpw:
+                return
+            stage = str(cpw.get("stage") or "")
+            if stage in {"await_code", "await_value", "await_cap", "await_min", "await_title"}:
                 from app.bot.handlers import admin_coupons as _ac
                 await _ac._msg_wizard_capture(message)  # type: ignore[attr-defined]
         except Exception:
