@@ -52,11 +52,9 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🛒 خرید سرویس"), KeyboardButton(text="📦 سفارش‌های من")],
             [KeyboardButton(text="👤 اکانت من"), KeyboardButton(text="💳 کیف پول")],
-            [KeyboardButton(text="💳 درخواست‌های شارژ"), KeyboardButton(text="💼 تنظیمات کیف پول")],
+            [KeyboardButton(text="💳 درخواست‌های شارژ"), KeyboardButton(text="⚙️ تنظیمات ربات")],
             [KeyboardButton(text="⚙️ مدیریت پلن‌ها"), KeyboardButton(text="📦 سفارش‌های اخیر")],
-            [KeyboardButton(text="👥 مدیریت کاربران"), KeyboardButton(text="📱 تنظیمات احراز شماره")],
-            [KeyboardButton(text="🧪 تنظیمات تست")],
-            [KeyboardButton(text="➕ شارژ دستی")],
+            [KeyboardButton(text="👥 مدیریت کاربران"), KeyboardButton(text="➕ شارژ دستی")],
         ], resize_keyboard=True
     )
 
@@ -185,6 +183,32 @@ async def _btn_admin_plans_manage(message: Message) -> None:
 @router.message(F.text == "📦 سفارش‌های اخیر")
 async def _btn_admin_recent_orders(message: Message) -> None:
     await admin_recent_handler(message)
+
+# Admin Settings Hub
+
+def _admin_settings_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="💼 تنظیمات کیف پول")],
+            [KeyboardButton(text="��� تنظیمات احراز شماره")],
+            [KeyboardButton(text="🧪 تنظیمات تست")],
+            [KeyboardButton(text="⬅️ بازگشت")],
+        ], resize_keyboard=True
+    )
+
+@router.message(F.text == "⚙️ تنظیمات ربات")
+async def _btn_admin_settings_hub(message: Message) -> None:
+    if not _is_admin(message):
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
+        return
+    await message.answer("⚙️ تنظیمات ربات", reply_markup=_admin_settings_keyboard())
+
+@router.message(F.text == "⬅️ بازگشت")
+async def _btn_admin_settings_back(message: Message) -> None:
+    if not _is_admin(message):
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
+        return
+    await message.answer("بازگشت به منوی اصلی ادمین", reply_markup=_admin_keyboard())
 
 # Bridge: Admin Wallet Settings button handled early to avoid router swallowing
 @router.message(F.text == "💼 تنظیمات کیف پول")
