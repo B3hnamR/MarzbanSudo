@@ -52,9 +52,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🛒 خرید سرویس"), KeyboardButton(text="📦 سفارش‌های من")],
             [KeyboardButton(text="👤 اکانت من"), KeyboardButton(text="💳 کیف پول")],
-            [KeyboardButton(text="💳 درخواست‌های شارژ"), KeyboardButton(text="⚙️ تنظیمات ربات")],
-            [KeyboardButton(text="⚙️ مدیریت پلن‌ها"), KeyboardButton(text="📦 سفارش‌های اخیر")],
-            [KeyboardButton(text="👥 مدیریت کاربران"), KeyboardButton(text="➕ شارژ دستی")],
+            [KeyboardButton(text="👥 مدیریت کاربران"), KeyboardButton(text="⚙️ تنظیمات ربات")],
         ], resize_keyboard=True
     )
 
@@ -190,8 +188,12 @@ def _admin_settings_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="💼 تنظیمات کیف پول")],
-            [KeyboardButton(text="��� تنظیمات احراز شماره")],
+            [KeyboardButton(text="📱 تنظیمات احراز شماره")],
             [KeyboardButton(text="🧪 تنظیمات تست")],
+            [KeyboardButton(text="💳 درخواست‌های شارژ")],
+            [KeyboardButton(text="⚙️ مدیریت پلن‌ها")],
+            [KeyboardButton(text="➕ شارژ دستی")],
+            [KeyboardButton(text="📦 سفارش‌های اخیر")],
             [KeyboardButton(text="⬅️ بازگشت")],
         ], resize_keyboard=True
     )
