@@ -74,7 +74,7 @@ def _kb_list(page: int, total_pages: int, items: list[Coupon]) -> InlineKeyboard
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def _render_list(msg: Message, page: int = 1) -> None:
+async def _render_list(msg: Message, page: int = 1, force_edit: bool = False) -> None:
     async with session_scope() as session:
         total = await session.scalar(select(func.count(Coupon.id)))
         total = int(total or 0)
@@ -93,10 +93,19 @@ async def _render_list(msg: Message, page: int = 1) -> None:
             parts.append(_fmt_coupon(c))
             parts.append("")
         text = "\n".join(parts)
-    try:
-        await msg.edit_text(text, reply_markup=_kb_list(page, total_pages, rows))
-    except Exception:
-        await msg.answer(text, reply_markup=_kb_list(page, total_pages, rows))
+    if force_edit:
+        try:
+            await msg.edit_text(text, reply_markup=_kb_list(page, total_pages, rows))
+        except Exception:
+            try:
+                await msg.edit_reply_markup(reply_markup=_kb_list(page, total_pages, rows))
+            except Exception:
+                pass
+    else:
+        try:
+            await msg.edit_text(text, reply_markup=_kb_list(page, total_pages, rows))
+        except Exception:
+            await msg.answer(text, reply_markup=_kb_list(page, total_pages, rows))
 
 
 # ============ Entry/Navigation ============ #
@@ -118,7 +127,7 @@ async def _cb_page(cb: CallbackQuery) -> None:
         page = int(cb.data.split(":")[2])
     except Exception:
         page = 1
-    await _render_list(cb.message, page)
+    await _render_list(cb.message, page, True)
     await cb.answer()
 
 
@@ -147,7 +156,7 @@ async def _cb_toggle(cb: CallbackQuery) -> None:
             return
         c.active = not bool(c.active)
         await session.commit()
-    await _render_list(cb.message, 1)
+    await _render_list(cb.message, 1, True)
     await cb.answer("تغییر وضعیت ذخیره شد")
 
 
@@ -184,7 +193,7 @@ async def _cb_del_confirm(cb: CallbackQuery) -> None:
         if c:
             await session.delete(c)
             await session.commit()
-    await _render_list(cb.message, 1)
+    await _render_list(cb.message, 1, True)
     await cb.answer("حذف شد")
 
 
@@ -207,7 +216,7 @@ async def _cb_new(cb: CallbackQuery) -> None:
 async def _cb_w_cancel(cb: CallbackQuery) -> None:
     if cb.from_user:
         await clear_intent(f"INTENT:CPW:{cb.from_user.id}")
-    await _render_list(cb.message, 1)
+    await _render_list(cb.message, 1, True)
     await cb.answer("لغو شد")
 
 
@@ -273,7 +282,14 @@ async def _msg_wizard_capture(message: Message) -> None:
         return
     # عنوان
     if stage == "await_title":
-        title = None if txt == "-" else txt[:191]
+        if txt == "-":
+            title = None
+        else:
+            # رد عنوان خالی یا تماماً عددی تا با ورودی‌های دیگر (مثلاً کیف پول) اشتباه نشود
+            if (not txt) or txt.isdigit():
+                await message.answer("❌ عنوان نامعتبر است. یک متن غیرعددی ارسال کنید یا '-' برای خالی.")
+                return
+            title = txt[:191]
         await set_intent_json(f"INTENT:CPW:{uid}", {**payload, "title": title, "stage": "await_active"})
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✅ فعال", callback_data="cp:w:active:1"), InlineKeyboardButton(text="❌ غیرفعال", callback_data="cp:w:active:0")], [InlineKeyboardButton(text="لغو", callback_data="cp:w:cancel")]])
         await message.answer("وضعیت اولیه را انتخاب کنید:", reply_markup=kb)

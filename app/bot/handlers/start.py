@@ -52,7 +52,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🛒 خرید سرویس"), KeyboardButton(text="📦 سفارش‌های من")],
             [KeyboardButton(text="👤 اکانت من"), KeyboardButton(text="💳 کیف پول")],
-            [KeyboardButton(text="👥 مدیریت کاربران"), KeyboardButton(text="⚙️ تنظیمات ربات")],
+            [KeyboardButton(text="⚙️ تنظیمات ربات")],
         ], resize_keyboard=True
     )
 
@@ -207,6 +207,7 @@ def _admin_settings_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="➕ شارژ دستی")],
             [KeyboardButton(text="📦 سفارش‌های اخیر")],
             [KeyboardButton(text="🎟️ کدهای تخفیف")],
+            [KeyboardButton(text="👥 مدیریت کاربران")],
             [KeyboardButton(text="⬅️ بازگشت")],
         ], resize_keyboard=True
     )
