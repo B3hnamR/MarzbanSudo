@@ -84,7 +84,7 @@ async def _render_list(msg: Message, page: int = 1) -> None:
         rows = (await session.execute(select(Coupon).order_by(Coupon.id.desc()).offset(offset).limit(PAGE_SIZE))).scalars().all()
     if not rows:
         text = (
-            "🎟️ کدهای تخف��ف\n\n"
+            "🎟️ کدهای تخفیف\n\n"
             "هنوز کوپنی ثبت نشده است. از دکمه \"➕ ایجاد کوپن\" استفاده کنید."
         )
     else:
