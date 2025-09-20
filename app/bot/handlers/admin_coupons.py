@@ -184,7 +184,7 @@ async def _cb_del_confirm(cb: CallbackQuery) -> None:
         await cb.answer("⛔️", show_alert=True)
         return
     try:
-        cid = int(cb.data.split(":")[3])
+        cid = int(cb.data.split(":")[-1])
     except Exception:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
@@ -392,5 +392,5 @@ async def _cb_w_save(cb: CallbackQuery) -> None:
         session.add(c)
         await session.commit()
     await clear_intent(f"INTENT:CPW:{uid}")
-    await _render_list(cb.message, 1)
+    await _render_list(cb.message, 1, True)
     await cb.answer("✅ کوپن ایجاد شد")

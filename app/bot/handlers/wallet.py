@@ -964,6 +964,8 @@ async def admin_wallet_settings_menu(message: Message) -> None:
         _WALLET_MANUAL_ADD_INTENT.pop(uid, None)
         from app.utils.intent_store import clear_intent as _clear
         await _clear(f"INTENT:WADM:{uid}")
+        # Also clear coupon wizard state to avoid cross-capture in wallet settings
+        await _clear(f"INTENT:CPW:{uid}")
         # Also clear any lingering reject-with-reason intents to avoid mis-capturing admin texts
         _WALLET_REJECT_REASON_INTENT.pop(uid, None)
         await _clear(f"INTENT:WREJ:{uid}")
