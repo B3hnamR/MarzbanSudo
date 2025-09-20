@@ -103,13 +103,6 @@ async def cb_admin_wallet_manual_add_cancel(cb: CallbackQuery) -> None:
 @router.message(lambda m: getattr(m, "from_user", None) and m.from_user and (m.from_user.id in get_admin_ids()) and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("active") and _WALLET_MANUAL_ADD_INTENT.get(m.from_user.id, {}).get("stage") == "await_ref" and isinstance(getattr(m, "text", None), str) and __import__("re").fullmatch(r"^(?:\d{5,}|[a-z0-9_]{3,})$", (m.text or "").strip().lower().lstrip("@")) is not None)
 async def admin_wallet_manual_add_ref(message: Message) -> None:
     admin_id = message.from_user.id
-    # Do not hijack inputs while coupons wizard is active
-    try:
-        cpw = await get_intent_json(f"INTENT:CPW:{admin_id}")
-        if cpw:
-            return
-    except Exception:
-        pass
     logger.info("wallet.admin_manual_add_ref", extra={"extra": {"uid": admin_id, "text": (message.text or "")}})
     # Only handle when admin has an active manual-add intent at 'await_ref' stage
     payload = await get_intent_json(f"INTENT:WADM:{admin_id}")

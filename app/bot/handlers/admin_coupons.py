@@ -211,7 +211,7 @@ async def _cb_w_cancel(cb: CallbackQuery) -> None:
     await cb.answer("لغو شد")
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and is_admin_uid(m.from_user.id))
+@router.message(lambda m: getattr(m, "from_user", None) and is_admin_uid(m.from_user.id) and isinstance(getattr(m, "text", None), str))
 async def _msg_wizard_capture(message: Message) -> None:
     uid = message.from_user.id
     payload = await get_intent_json(f"INTENT:CPW:{uid}")

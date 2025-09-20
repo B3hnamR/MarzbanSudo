@@ -95,6 +95,17 @@ async def main() -> None:
     async def _numeric_bridge_entry(message: Message) -> None:
         try:
             from app.bot.handlers import start as start_handlers  # local import to avoid cycles
+            # Coupons wizard has priority: if active, delegate to its capture handler
+            try:
+                from app.utils.intent_store import get_intent_json as _get_intent
+                uid = getattr(getattr(message, "from_user", None), "id", None)
+                cpw = await _get_intent(f"INTENT:CPW:{uid}") if uid else None
+                if cpw:
+                    from app.bot.handlers import admin_coupons as _ac
+                    await _ac._msg_wizard_capture(message)  # type: ignore[attr-defined]
+                    return
+            except Exception:
+                pass
             # Route-by-stage: if WADM awaiting reference, delegate to ref bridge first
             try:
                 from app.utils.intent_store import get_intent_json as _get_intent
