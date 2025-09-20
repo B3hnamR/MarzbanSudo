@@ -95,6 +95,17 @@ async def main() -> None:
     async def _numeric_bridge_entry(message: Message) -> None:
         try:
             from app.bot.handlers import start as start_handlers  # local import to avoid cycles
+            # Route-by-stage: if WADM awaiting reference, delegate to ref bridge first
+            try:
+                from app.utils.intent_store import get_intent_json as _get_intent
+                uid = getattr(getattr(message, "from_user", None), "id", None)
+                payload = await _get_intent(f"INTENT:WADM:{uid}") if uid else None
+                if payload and str(payload.get("stage")) == "await_ref":
+                    await start_handlers._bridge_wallet_manual_add_ref(message)  # type: ignore[attr-defined]
+                    return
+            except Exception:
+                pass
+            # Otherwise, handle numeric as amount/settings/custom
             await start_handlers._bridge_wallet_numeric(message)  # type: ignore[attr-defined]
         except Exception:
             pass
