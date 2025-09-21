@@ -59,6 +59,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
 
 @router.message(CommandStart())
 async def handle_start(message: Message) -> None:
+    logger.info("start.handle_start: enter", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     # Ensure a DB user record exists for anyone who starts the bot
     try:
         if message.from_user:
@@ -111,6 +112,7 @@ async def handle_start(message: Message) -> None:
                     "برای استفاده از ربات، ابتدا در کانال عضو شوید.\n"
                     "پس از عضویت، روی دکمه \"من عضو شدم ✅\" بزنید."
                 )
+                logger.info("start.handle_start: gate enforced", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
                 await message.answer(txt, reply_markup=kb)
                 return
         except Exception:
@@ -125,15 +127,18 @@ async def handle_start(message: Message) -> None:
             "توجه: برای بررسی خودکار عضویت، باید ربات را به عنوان ادمین کانال اضافه کنید.\n"
             "پس از عضویت، روی دکمه \"من عضو شدم ✅\" بزنید."
             )
+            logger.info("start.handle_start: gate enforced (fallback)", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
             await message.answer(txt, reply_markup=kb)
             return
     if _is_admin(message):
+        logger.info("start.handle_start: admin branch", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
         text = (
             "👋 به MarzbanSudo خوش آمدید، ادمین عزیز!\n\n"
             "🧭 از دکمه‌ها برای مدیریت استفاده کنید. دستورات اسلشی فعال‌اند ولی در منو نمایش داده نمی‌شوند."
         )
         await message.answer(text, reply_markup=_admin_keyboard())
     else:
+        logger.info("start.handle_start: user branch", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
         text = (
             "👋 به MarzbanSudo خوش آمدید!\n\n"
             "از دکمه‌های زیر استفاده کنید: 🛒 خرید پلن، 📦 مشاهده سفارش‌ها و 👤 وضعیت اکانت."

@@ -59,7 +59,6 @@ def _get_admin_ids() -> List[int]:
 
 
 
-
 async def main() -> None:
     setup_logging()
 
