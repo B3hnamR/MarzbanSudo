@@ -72,12 +72,18 @@ async def main() -> None:
 
     class DebugUpdateMiddleware(BaseMiddleware):
         async def __call__(self, handler, event, data):
-            payload = {}
+            payload: object
             try:
-                payload = event.model_dump()
+                payload = event.model_dump(mode="json")
             except Exception:
-                payload = str(event)
-            logging.info("debug.update", extra={'extra': {'event_type': type(event).__name__, 'payload': payload}})
+                try:
+                    payload = event.model_dump()
+                except Exception:
+                    payload = repr(event)
+            logging.info(
+                "debug.update",
+                extra={'extra': {'event_type': type(event).__name__, 'payload': payload}},
+            )
             return await handler(event, data)
 
     dp.update.middleware(DebugUpdateMiddleware())
