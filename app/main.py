@@ -3,7 +3,7 @@ import logging
 import os
 from typing import List
 
-from aiogram import Bot, Dispatcher, Router, F
+from aiogram import BaseMiddleware, Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 
@@ -69,6 +69,19 @@ async def main() -> None:
 
     bot = Bot(token=token)
     dp = Dispatcher()
+
+    class DebugUpdateMiddleware(BaseMiddleware):
+        async def __call__(self, handler, event, data):
+            payload = {}
+            try:
+                payload = event.model_dump()
+            except Exception:
+                payload = str(event)
+            logging.info("debug.update", extra={'extra': {'event_type': type(event).__name__, 'payload': payload}})
+            return await handler(event, data)
+
+    dp.update.middleware(DebugUpdateMiddleware())
+
 
     # Rate limit per-user (apply to message and callback_query updates)
     max_per_min = settings.rate_limit_user_msg_per_min
