@@ -4,7 +4,6 @@ import os
 from typing import List
 
 from aiogram import Bot, Dispatcher, Router, F
-from aiogram.exceptions import SkipHandler
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 
@@ -97,29 +96,26 @@ async def main() -> None:
         try:
             txt = getattr(message, "text", None)
             if not isinstance(txt, str) or txt.startswith("/"):
-                raise SkipHandler()
+                return
             from_user = getattr(message, "from_user", None)
             uid = getattr(from_user, "id", None)
             if uid is None:
-                raise SkipHandler()
+                return
             from app.utils.intent_store import get_intent_json as _get_intent
             cpw = await _get_intent(f"INTENT:CPW:{uid}")
             if not cpw:
-                raise SkipHandler()
+                return
             stage = str(cpw.get("stage") or "")
             if stage in {"await_code", "await_value", "await_cap", "await_min", "await_title"}:
                 from app.bot.handlers import admin_coupons as _ac
                 await _ac._msg_wizard_capture(message)  # type: ignore[attr-defined]
                 return
-            raise SkipHandler()
-        except SkipHandler:
-            raise
         except Exception:
             logging.exception("coupon wizard bridge failed", extra={"extra": {"uid": getattr(getattr(message, "from_user", None), "id", None)}})
-            raise SkipHandler()
+            raise
 
     try:
-        dp.message.register(_cpw_bridge_entry, F.text)
+        dp.message.register(_cpw_bridge_entry, F.text, flags={"block": False})
     except Exception:
         pass
 
@@ -127,7 +123,6 @@ async def main() -> None:
     async def _numeric_bridge_entry(message: Message) -> None:
         try:
             from app.bot.handlers import start as start_handlers  # local import to avoid cycles
-            # Coupons wizard has priority: if active, delegate to its capture handler
             try:
                 from app.utils.intent_store import get_intent_json as _get_intent
                 uid = getattr(getattr(message, "from_user", None), "id", None)
@@ -138,7 +133,6 @@ async def main() -> None:
                     return
             except Exception:
                 pass
-            # Route-by-stage: if WADM awaiting reference, delegate to ref bridge first
             try:
                 from app.utils.intent_store import get_intent_json as _get_intent
                 uid = getattr(getattr(message, "from_user", None), "id", None)
@@ -148,23 +142,22 @@ async def main() -> None:
                     return
             except Exception:
                 pass
-            # Otherwise, handle numeric as amount/settings/custom
             await start_handlers._bridge_wallet_numeric(message)  # type: ignore[attr-defined]
-        except SkipHandler:
-            raise
         except Exception:
             logging.exception("numeric bridge failed", extra={"extra": {"uid": getattr(getattr(message, "from_user", None), "id", None)}})
-            raise SkipHandler()
+            raise
 
     # Strict numeric (ASCII/Persian digits), then permissive fallback (any text containing digits)
     try:
         dp.message.register(
             _numeric_bridge_entry,
             F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]{0,13}$"),
+            flags={"block": False},
         )
         dp.message.register(
             _numeric_bridge_entry,
             F.text.regexp(r".*[0-9\u06F0-\u06F9].*"),
+            flags={"block": False},
         )
     except Exception:
         pass
