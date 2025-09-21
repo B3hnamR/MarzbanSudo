@@ -141,6 +141,7 @@ async def _render_list(msg: Message, page: int = 1, force_edit: bool = False) ->
         page = max(1, min(page, total_pages))
         offset = (page - 1) * PAGE_SIZE
         rows = (await session.execute(select(Coupon).order_by(Coupon.id.desc()).offset(offset).limit(PAGE_SIZE))).scalars().all()
+    logger.debug("coupons.render_list", extra={"extra": {"page": page, "total": total, "total_pages": total_pages, "rows": len(rows), "force_edit": force_edit}})
     if not rows:
         text = (
             "🎟️ کدهای تخفیف\n\n"
@@ -174,6 +175,7 @@ async def _admin_coupons_entry(message: Message) -> None:
     if not (message.from_user and is_admin_uid(message.from_user.id)):
         await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
+    logger.info("coupons.entry", extra={"extra": {"uid": getattr(getattr(message, "from_user", None), "id", None)}})
     await _render_list(message, 1)
 
 
@@ -186,6 +188,7 @@ async def _cb_page(cb: CallbackQuery) -> None:
         page = int(cb.data.split(":")[2])
     except Exception:
         page = 1
+    logger.debug("coupons.page", extra={"extra": {"uid": getattr(cb.from_user, 'id', None), "page": page}})
     await _render_list(cb.message, page, True)
     await cb.answer()
 
@@ -215,6 +218,7 @@ async def _cb_toggle(cb: CallbackQuery) -> None:
             return
         c.active = not bool(c.active)
         await session.commit()
+    logger.info("coupons.toggle", extra={"extra": {"uid": getattr(cb.from_user, 'id', None), "id": cid, "active": bool(c.active)}})
     await _render_list(cb.message, 1, True)
     await cb.answer("تغییر وضعیت ذخیره شد")
 
@@ -233,6 +237,7 @@ async def _cb_del(cb: CallbackQuery) -> None:
         [InlineKeyboardButton(text="❗️ تایید حذف", callback_data=f"cp:del:confirm:{cid}")],
         [InlineKeyboardButton(text="⬅️ بازگشت", callback_data="cp:pg:1")],
     ])
+    logger.info("coupons.delete.confirm", extra={"extra": {"uid": getattr(cb.from_user, 'id', None), "id": cid}})
     await cb.message.edit_text("آیا از حذف این کوپن مطمئن هستید؟", reply_markup=kb)
     await cb.answer()
 
@@ -252,6 +257,7 @@ async def _cb_del_confirm(cb: CallbackQuery) -> None:
         if c:
             await session.delete(c)
             await session.commit()
+    logger.info("coupons.delete.done", extra={"extra": {"uid": getattr(cb.from_user, 'id', None), "id": cid}})
     await _render_list(cb.message, 1, True)
     await cb.answer("حذف شد")
 
@@ -265,6 +271,7 @@ async def _cb_new(cb: CallbackQuery) -> None:
         await cb.answer("⛔️", show_alert=True)
         return
     uid = cb.from_user.id
+    logger.info("coupons.new", extra={"extra": {"uid": uid}})
     await set_intent_json(f"INTENT:CPW:{uid}", {"stage": "await_code"})
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="لغو", callback_data="cp:w:cancel")]])
     await cb.message.edit_text("🎟️ ایجاد کوپن جدید\n\nلطفاً کد کوپن را وارد کنید (حروف/اعداد/خط تیره/زیرخط، 3 تا 64 کاراکتر).", reply_markup=kb)
@@ -275,6 +282,7 @@ async def _cb_new(cb: CallbackQuery) -> None:
 async def _cb_w_cancel(cb: CallbackQuery) -> None:
     if cb.from_user:
         await clear_intent(f"INTENT:CPW:{cb.from_user.id}")
+        logger.info("coupons.wizard.cancel", extra={"extra": {"uid": cb.from_user.id}})
     await _render_list(cb.message, 1, True)
     await cb.answer("لغو شد")
 
@@ -287,12 +295,15 @@ async def _msg_wizard_capture(message: Message) -> None:
         return
     stage = str(payload.get("stage") or "")
     txt = (message.text or "").strip()
+    logger.debug("cpw.capture.enter", extra={"extra": {"uid": uid, "stage": stage, "text": txt}})
     # مرحله: کد
     if stage == "await_code":
         import re
         if not re.fullmatch(r"[A-Za-z0-9_-]{3,64}", txt):
+            logger.warning("cpw.code.invalid", extra={"extra": {"uid": uid, "text": txt}})
             await message.answer("❌ کد نامعتبر است. فقط حروف/اعداد/خط‌تیره/زیرخط، 3 تا 64 کاراکتر.")
             return
+        logger.debug("cpw.advance", extra={"extra": {"uid": uid, "from": "await_code", "to": "await_type", "code": txt}})
         await set_intent_json(f"INTENT:CPW:{uid}", {**payload, "code": txt, "stage": "await_type"})
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="٪ درصدی", callback_data="cp:w:type:percent"), InlineKeyboardButton(text="💰 ثابت", callback_data="cp:w:type:fixed")], [InlineKeyboardButton(text="لغو", callback_data="cp:w:cancel")]])
         await message.answer("نوع تخفیف را انتخاب کنید:", reply_markup=kb)
@@ -308,8 +319,10 @@ async def _msg_wizard_capture(message: Message) -> None:
                 if val <= 0:
                     raise ValueError
         except Exception:
+            logger.warning("cpw.value.invalid", extra={"extra": {"uid": uid, "text": txt, "type": str(payload.get("type"))}})
             await message.answer("❌ مقدار نامعتبر است. برای درصد، عدد 1..100؛ برای ثابت، عدد ریالی > 0")
             return
+        logger.debug("cpw.advance", extra={"extra": {"uid": uid, "from": "await_value", "to": "await_cap", "value": str(val), "type": str(payload.get("type"))}})
         await set_intent_json(f"INTENT:CPW:{uid}", {**payload, "value": str(val), "stage": "await_cap"})
         await message.answer("🔢 سقف تخفیف (ریال) را وارد کنید (یا 0 برای بدون سقف).")
         return
@@ -320,9 +333,11 @@ async def _msg_wizard_capture(message: Message) -> None:
             if cap < 0:
                 raise ValueError
         except Exception:
+            logger.warning("cpw.cap.invalid", extra={"extra": {"uid": uid, "text": txt}})
             await message.answer("❌ عدد معتبر وارد کنید (0 برای بدون سقف).")
             return
         cap_str = None if cap == 0 else str(cap)
+        logger.debug("cpw.advance", extra={"extra": {"uid": uid, "from": "await_cap", "to": "await_min", "cap": cap_str}})
         await set_intent_json(f"INTENT:CPW:{uid}", {**payload, "cap": cap_str, "stage": "await_min"})
         await message.answer("💵 حداقل مبلغ سفارش (ریال) را وارد کنید (یا 0 برای بدون حداقل).")
         return
@@ -333,9 +348,11 @@ async def _msg_wizard_capture(message: Message) -> None:
             if mn < 0:
                 raise ValueError
         except Exception:
+            logger.warning("cpw.min.invalid", extra={"extra": {"uid": uid, "text": txt}})
             await message.answer("❌ عدد معتبر وارد کنید (0 برای بدون حداقل).")
             return
         min_str = None if mn == 0 else str(mn)
+        logger.debug("cpw.advance", extra={"extra": {"uid": uid, "from": "await_min", "to": "await_title", "min": min_str}})
         await set_intent_json(f"INTENT:CPW:{uid}", {**payload, "min": min_str, "stage": "await_title"})
         await message.answer("📝 یک عنوان کوتاه برای کوپن وارد کنید (یا '-' برای خالی).")
         return
@@ -346,9 +363,11 @@ async def _msg_wizard_capture(message: Message) -> None:
         else:
             # رد عنوان خالی یا تماماً عددی تا با ورودی‌های دیگر (مثلاً کیف پول) اشتباه نشود
             if (not txt) or txt.isdigit():
+                logger.warning("cpw.title.invalid", extra={"extra": {"uid": uid, "text": txt}})
                 await message.answer("❌ عنوان نامعتبر است. یک متن غیرعددی ارسال کنید یا '-' برای خالی.")
                 return
             title = txt[:191]
+        logger.debug("cpw.advance", extra={"extra": {"uid": uid, "from": "await_title", "to": "await_active", "title": title if title is not None else "-"}})
         await set_intent_json(f"INTENT:CPW:{uid}", {**payload, "title": title, "stage": "await_active"})
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✅ فعال", callback_data="cp:w:active:1"), InlineKeyboardButton(text="❌ غیرفعال", callback_data="cp:w:active:0")], [InlineKeyboardButton(text="لغو", callback_data="cp:w:cancel")]])
         prompt = "وضعیت اولیه را انتخاب کنید (یا «فعال» یا «غیرفعال» را تایپ کنید):"
@@ -371,11 +390,13 @@ async def _msg_wizard_capture(message: Message) -> None:
         elif norm_simple in {token.replace(" ", "") for token in falsy_tokens}:
             act = False
         else:
+            logger.warning("cpw.active.invalid", extra={"extra": {"uid": uid, "text": txt}})
             await message.answer("برای تعیین وضعیت، «فعال» یا «غیرفعال» را ارسال کنید یا از دکمه‌ها استفاده کنید.")
             return
         new_payload = {**payload, "active": act}
         try:
             await set_intent_json(f"INTENT:CPW:{uid}", {**new_payload, "stage": "confirm"})
+            logger.info("cpw.active.set", extra={"extra": {"uid": uid, "active": act}})
         except Exception:
             logger.exception("coupon wizard failed to persist active flag", extra={"extra": {"uid": uid}})
             await message.answer("خطای داخلی. لطفاً دوباره تلاش کنید.")
@@ -383,6 +404,7 @@ async def _msg_wizard_capture(message: Message) -> None:
         summary = _wizard_summary_text(new_payload)
         try:
             await message.answer(summary, reply_markup=_wizard_confirm_keyboard())
+            logger.info("cpw.summary.sent", extra={"extra": {"uid": uid}})
         except Exception:
             logger.exception("coupon wizard failed to send confirmation summary", extra={"extra": {"uid": uid}})
         return
@@ -396,6 +418,7 @@ async def _cb_w_type(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
     payload = await get_intent_json(f"INTENT:CPW:{uid}") or {}
     tp = (cb.data.split(":")[3] or "percent").strip()
+    logger.info("cpw.type", extra={"extra": {"uid": uid, "type": tp}})
     if tp not in {"percent", "fixed"}:
         await cb.answer("نوع نامعتبر", show_alert=True)
         return
@@ -416,6 +439,7 @@ async def _cb_w_active(cb: CallbackQuery) -> None:
     payload = await get_intent_json(f"INTENT:CPW:{uid}") or {}
     act = (cb.data.split(":")[3] or "1").strip() == "1"
     updated_payload = {**payload, "active": act}
+    logger.info("cpw.active", extra={"extra": {"uid": uid, "active": act}})
     await set_intent_json(f"INTENT:CPW:{uid}", {**updated_payload, "stage": "confirm"})
     summary = _wizard_summary_text(updated_payload)
     try:
@@ -466,6 +490,7 @@ async def _cb_w_save(cb: CallbackQuery) -> None:
         )
         session.add(c)
         await session.commit()
+    logger.info("cpw.save", extra={"extra": {"uid": uid, "code": code, "type": ty, "active": act}})
     await clear_intent(f"INTENT:CPW:{uid}")
     await _render_list(cb.message, 1, True)
     await cb.answer("✅ کوپن ایجاد شد")

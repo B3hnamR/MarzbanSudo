@@ -86,7 +86,8 @@ async def main() -> None:
             )
             return await handler(event, data)
 
-    dp.update.middleware(DebugUpdateMiddleware())
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        dp.update.middleware(DebugUpdateMiddleware())
 
 
     # Rate limit per-user (apply to message and callback_query updates)
@@ -147,14 +148,15 @@ async def main() -> None:
             extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None), 'text': getattr(message, 'text', None)}}
         )
 
-    try:
-        dp.message.register(
-            _debug_all_message,
-            F.text.regexp(r"^(?!/).+"),
-            flags={"block": False},
-        )
-    except Exception:
-        pass
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        try:
+            dp.message.register(
+                _debug_all_message,
+                F.text.regexp(r"^(?!/).+"),
+                flags={"block": False},
+            )
+        except Exception:
+            pass
 
     # High-priority numeric bridge: route numeric texts to start router bridge before other routers
     async def _numeric_bridge_entry(message: Message) -> None:
