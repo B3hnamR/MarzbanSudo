@@ -133,14 +133,8 @@ async def main() -> None:
             logging.exception("coupon wizard bridge failed", extra={"extra": {"uid": getattr(getattr(message, "from_user", None), "id", None)}})
             return
 
-    try:
-        dp.message.register(
-            _cpw_bridge_entry,
-            F.text.regexp(r"^(?!/).+"),
-            flags={"block": False},
-        )
-    except Exception:
-        pass
+    # cpw bridge registration moved below routers to avoid preempting button handlers
+    pass
 
     async def _debug_all_message(message: Message) -> None:
         logging.info(
@@ -148,7 +142,8 @@ async def main() -> None:
             extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None), 'text': getattr(message, 'text', None)}}
         )
 
-    if logging.getLogger().isEnabledFor(logging.DEBUG):
+    # debug message handler disabled to avoid interfering with routing (DebugUpdateMiddleware already logs updates)
+    if False and logging.getLogger().isEnabledFor(logging.DEBUG):
         try:
             dp.message.register(
                 _debug_all_message,
@@ -219,6 +214,16 @@ async def main() -> None:
     dp.include_router(trial_handlers.router)
     # Plans last to avoid its generic text handler swallowing commands
     dp.include_router(plans_handlers.router)
+
+    # Low-priority coupons wizard bridge (after routers) to not preempt button handlers
+    try:
+        dp.message.register(
+            _cpw_bridge_entry,
+            F.text.regexp(r"^(?!/).+"),
+            flags={"block": False},
+        )
+    except Exception:
+        pass
 
     # Polling startup
     logging.info("Starting Telegram bot polling ...")
