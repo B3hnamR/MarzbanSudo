@@ -156,16 +156,19 @@ async def _btn_plans(message: Message) -> None:
 
 @router.message(F.text.in_({"📦 سفارش‌ها", "📦 سفارش‌های من"}))
 async def _btn_orders(message: Message) -> None:
+    logger.info("start.btn_orders", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     await orders_handler(message)
 
 
 @router.message(F.text.in_({"👤 اکانت", "👤 اکانت من"}))
 async def _btn_account(message: Message) -> None:
+    logger.info("start.btn_account", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     await account_handler(message)
 
 
 @router.message(F.text == "💳 کیف پول")
 async def _btn_wallet(message: Message) -> None:
+    logger.info("start.btn_wallet", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     await wallet_menu_handler(message)
 
 
