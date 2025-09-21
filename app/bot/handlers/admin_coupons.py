@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+import logging
+from typing import Optional, Any
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, Message
@@ -15,7 +16,65 @@ from app.utils.intent_store import get_intent_json, set_intent_json, clear_inten
 
 router = Router()
 
+logger = logging.getLogger(__name__)
+
 PAGE_SIZE = 5
+
+
+def _wizard_summary_text(payload: dict[str, Any]) -> str:
+    code = payload.get("code") or "-"
+    ty = (payload.get("type") or "percent").strip()
+    value_raw = payload.get("value")
+    cap_raw = payload.get("cap")
+    min_raw = payload.get("min")
+    title = payload.get("title")
+    active_flag = bool(payload.get("active"))
+
+    ty_txt = "\u062f\u0631\u0635\u062f\u06cc" if ty == "percent" else "\u0645\u0628\u0644\u063a \u062b\u0627\u0628\u062a"
+    value_str = str(value_raw) if value_raw is not None else "0"
+    if ty == "percent":
+        try:
+            val_txt = f"{int(Decimal(value_str))}%"
+        except Exception:
+            val_txt = f"{value_str}%"
+    else:
+        try:
+            val_txt = _fmt_money(Decimal(value_str))
+        except Exception:
+            val_txt = _fmt_money(Decimal("0"))
+
+    try:
+        cap_txt = _fmt_money(Decimal(str(cap_raw))) if cap_raw else "-"
+    except Exception:
+        cap_txt = "-"
+    try:
+        min_txt = _fmt_money(Decimal(str(min_raw))) if min_raw else "-"
+    except Exception:
+        min_txt = "-"
+
+    title_display = title if title else "-"
+    act_txt = "\u2705 \u0641\u0639\u0627\u0644" if active_flag else "\U0001f6ab \u063a\u06cc\u0631\u0641\u0639\u0627\u0644"
+
+    return (
+        "\u062e\u0644\u0627\u0635\u0647 \u06a9\u0648\u067e\u0646:\\n\\n"
+        f"\u06a9\u062f: {code}\\n"
+        f"\u0646\u0648\u0639/\u0645\u0642\u062f\u0627\u0631: {ty_txt} / {val_txt}\\n"
+        f"\u0633\u0642\u0641 \u062a\u062e\u0641\u06cc\u0641: {cap_txt}\\n"
+        f"\u062d\u062f\u0627\u0642\u0644 \u0645\u0628\u0644\u063a \u0633\u0641\u0627\u0631\u0634: {min_txt}\\n"
+        f"\u0639\u0646\u0648\u0627\u0646: {title_display}\\n"
+        f"\u0648\u0636\u0639\u06cc\u062a: {act_txt}"
+    )
+
+def _wizard_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="\U0001f4be \u0630\u062e\u06cc\u0631\u0647 \u06a9\u0648\u067e\u0646", callback_data="cp:w:save"),
+                InlineKeyboardButton(text="\u0644\u063a\u0648", callback_data="cp:w:cancel"),
+            ]
+        ]
+    )
+
 
 # ============ Helpers ============ #
 
@@ -292,7 +351,40 @@ async def _msg_wizard_capture(message: Message) -> None:
             title = txt[:191]
         await set_intent_json(f"INTENT:CPW:{uid}", {**payload, "title": title, "stage": "await_active"})
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✅ فعال", callback_data="cp:w:active:1"), InlineKeyboardButton(text="❌ غیرفعال", callback_data="cp:w:active:0")], [InlineKeyboardButton(text="لغو", callback_data="cp:w:cancel")]])
-        await message.answer("وضعیت اولیه را انتخاب کنید:", reply_markup=kb)
+        prompt = "وضعیت اولیه را انتخاب کنید (یا «فعال» یا «غیرفعال» را تایپ کنید):"
+        try:
+            await message.answer(prompt, reply_markup=kb)
+        except Exception:
+            logger.exception("coupon wizard failed to send activation prompt", extra={"extra": {"uid": uid}})
+            try:
+                await message.answer("متاسفانه ارسال دکمه‌ها با خطا مواجه شد. لطفاً «فعال» یا «غیرفعال» را تایپ کنید.")
+            except Exception:
+                pass
+        return
+    if stage == "await_active":
+        norm = txt.lower()
+        norm_simple = norm.replace(" ", "")
+        truthy_tokens = {"1", "true", "yes", "on", "فعال", "faal", "✅"}
+        falsy_tokens = {"0", "false", "no", "off", "غیرفعال", "ghairfaal", "❌", "🚫"}
+        if norm_simple in {token.replace(" ", "") for token in truthy_tokens}:
+            act = True
+        elif norm_simple in {token.replace(" ", "") for token in falsy_tokens}:
+            act = False
+        else:
+            await message.answer("برای تعیین وضعیت، «فعال» یا «غیرفعال» را ارسال کنید یا از دکمه‌ها استفاده کنید.")
+            return
+        new_payload = {**payload, "active": act}
+        try:
+            await set_intent_json(f"INTENT:CPW:{uid}", {**new_payload, "stage": "confirm"})
+        except Exception:
+            logger.exception("coupon wizard failed to persist active flag", extra={"extra": {"uid": uid}})
+            await message.answer("خطای داخلی. لطفاً دوباره تلاش کنید.")
+            return
+        summary = _wizard_summary_text(new_payload)
+        try:
+            await message.answer(summary, reply_markup=_wizard_confirm_keyboard())
+        except Exception:
+            logger.exception("coupon wizard failed to send confirmation summary", extra={"extra": {"uid": uid}})
         return
 
 
@@ -323,30 +415,13 @@ async def _cb_w_active(cb: CallbackQuery) -> None:
     uid = cb.from_user.id
     payload = await get_intent_json(f"INTENT:CPW:{uid}") or {}
     act = (cb.data.split(":")[3] or "1").strip() == "1"
-    await set_intent_json(f"INTENT:CPW:{uid}", {**payload, "active": act, "stage": "confirm"})
-    # خلاصه
-    code = payload.get("code")
-    ty = payload.get("type")
-    val = payload.get("value")
-    cap = payload.get("cap")
-    mn = payload.get("min")
-    title = payload.get("title")
-    ty_txt = "درصدی" if ty == "percent" else "ثابت"
-    val_txt = (f"{val}%" if ty == "percent" else _fmt_money(Decimal(val or "0")))
-    cap_txt = _fmt_money(Decimal(cap)) if cap else "-"
-    mn_txt = _fmt_money(Decimal(mn)) if mn else "-"
-    act_txt = "✅ فعال" if act else "❌ غیرفعال"
-    summary = (
-        "خلاصه کوپن:\n\n"
-        f"کد: {code}\n"
-        f"نوع/مقدار: {ty_txt} / {val_txt}\n"
-        f"حداکثر تخفیف: {cap_txt}\n"
-        f"حداقل مبلغ سفارش: {mn_txt}\n"
-        f"عنوان: {title or '-'}\n"
-        f"وضعیت: {act_txt}"
-    )
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💾 ثبت", callback_data="cp:w:save"), InlineKeyboardButton(text="لغو", callback_data="cp:w:cancel")]])
-    await cb.message.edit_text(summary, reply_markup=kb)
+    updated_payload = {**payload, "active": act}
+    await set_intent_json(f"INTENT:CPW:{uid}", {**updated_payload, "stage": "confirm"})
+    summary = _wizard_summary_text(updated_payload)
+    try:
+        await cb.message.edit_text(summary, reply_markup=_wizard_confirm_keyboard())
+    except Exception:
+        await cb.message.answer(summary, reply_markup=_wizard_confirm_keyboard())
     await cb.answer()
 
 
