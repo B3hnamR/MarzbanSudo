@@ -133,7 +133,11 @@ async def main() -> None:
             return
 
     try:
-        dp.message.register(_cpw_bridge_entry, F.text, flags={"block": False})
+        dp.message.register(
+            _cpw_bridge_entry,
+            F.text.regexp(r"^(?!/).+"),
+            flags={"block": False},
+        )
     except Exception:
         pass
 
@@ -144,7 +148,11 @@ async def main() -> None:
         )
 
     try:
-        dp.message.register(_debug_all_message, flags={"block": False})
+        dp.message.register(
+            _debug_all_message,
+            F.text.regexp(r"^(?!/).+"),
+            flags={"block": False},
+        )
     except Exception:
         pass
 
