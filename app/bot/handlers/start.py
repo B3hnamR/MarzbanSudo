@@ -59,7 +59,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
 
 @router.message(CommandStart())
 async def handle_start(message: Message) -> None:
-    logger.info("start.handle_start: enter", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
+    logger.info("start.handle_start: enter", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None), 'text': getattr(message, 'text', None)}})
     # Ensure a DB user record exists for anyone who starts the bot
     try:
         if message.from_user:
@@ -137,6 +137,7 @@ async def handle_start(message: Message) -> None:
             "🧭 از دکمه‌ها برای مدیریت استفاده کنید. دستورات اسلشی فعال‌اند ولی در منو نمایش داده نمی‌شوند."
         )
         await message.answer(text, reply_markup=_admin_keyboard())
+        logger.info("start.handle_start: admin reply sent", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     else:
         logger.info("start.handle_start: user branch", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
         text = (
@@ -144,6 +145,7 @@ async def handle_start(message: Message) -> None:
             "از دکمه‌های زیر استفاده کنید: 🛒 خرید پلن، 📦 مشاهده سفارش‌ها و 👤 وضعیت اکانت."
         )
         await message.answer(text, reply_markup=_user_keyboard())
+        logger.info("start.handle_start: user reply sent", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
 
 
 # Map non-slash buttons to existing handlers
