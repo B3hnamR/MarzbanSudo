@@ -118,6 +118,17 @@ async def main() -> None:
     except Exception:
         pass
 
+    async def _debug_all_message(message: Message) -> None:
+        logging.info(
+            "debug.message",
+            extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None), 'text': getattr(message, 'text', None)}}
+        )
+
+    try:
+        dp.message.register(_debug_all_message, flags={"block": False})
+    except Exception:
+        pass
+
     # High-priority numeric bridge: route numeric texts to start router bridge before other routers
     async def _numeric_bridge_entry(message: Message) -> None:
         try:

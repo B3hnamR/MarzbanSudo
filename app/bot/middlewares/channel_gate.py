@@ -6,7 +6,12 @@ from typing import Any, Awaitable, Callable, Dict, List
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
+import logging
+
 from app.services.security import get_admin_ids
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChannelGateMiddleware(BaseMiddleware):
@@ -21,6 +26,10 @@ class ChannelGateMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         channel = os.getenv("REQUIRED_CHANNEL", "").strip()
+        logger.debug(
+            "channel_gate.enter",
+            extra={'extra': {'uid': getattr(user, 'id', None), 'channel': channel}}
+        )
         if not channel:
             return await handler(event, data)
 
@@ -28,6 +37,10 @@ class ChannelGateMiddleware(BaseMiddleware):
         try:
             admins: List[int] = get_admin_ids()
             if user.id in admins:
+                logger.debug(
+                    "channel_gate.bypass_admin",
+                    extra={'extra': {'uid': user.id, 'channel': channel}}
+                )
                 return await handler(event, data)
         except Exception:
             pass
@@ -53,6 +66,10 @@ class ChannelGateMiddleware(BaseMiddleware):
         ])
         # Reply depending on event type; block further processing
         try:
+            logger.info(
+                "channel_gate.enforce",
+                extra={'extra': {'uid': getattr(user, 'id', None), 'channel': channel}}
+            )
             if isinstance(event, Message):
                 await event.answer(
                     "برای استفاده از ربات، ابتدا در کانال عضو شوید.\n"
