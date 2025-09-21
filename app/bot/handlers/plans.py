@@ -393,7 +393,7 @@ async def cb_plan_uname_cst(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and isinstance(getattr(m, "text", None), str))
+@router.message(lambda m: getattr(m, "from_user", None) and isinstance(getattr(m, "text", None), str), flags={"block": False})
 async def msg_plan_uname_custom(message: Message) -> None:
     user_id = message.from_user.id
     payload = await get_intent_json(_k_cst(user_id))
