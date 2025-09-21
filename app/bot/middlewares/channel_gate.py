@@ -85,4 +85,4 @@ class ChannelGateMiddleware(BaseMiddleware):
                 await event.answer()
         except Exception:
             pass
-        return None
+        return await handler(event, data)
