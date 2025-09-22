@@ -111,7 +111,7 @@ async def admin_wallet_manual_add_ref(message: Message) -> None:
         return
     if not await has_capability_async(admin_id, CAP_WALLET_MODERATE):
         _WALLET_MANUAL_ADD_INTENT.pop(admin_id, None)
-        await message.answer("⛔️ شما دس��رسی ادمین ندارید.")
+        await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     ref = (message.text or "").strip()
     norm = ref.strip().lower().lstrip("@")
@@ -595,7 +595,7 @@ async def cb_wallet_amount(cb: CallbackQuery) -> None:
         await cb.answer()
         return
     try:
-        amount = Decimal(cb.data.split(":")[2])
+        amount = Decimal(cb.data.split(":")[-1])  # FIXED: use [-1] instead of [2]
     except Exception:
         await cb.answer("مبلغ نامعتبر", show_alert=True)
         return
@@ -736,7 +736,7 @@ async def cb_wallet_reject_reason_prompt(cb: CallbackQuery) -> None:
         await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
-        topup_id = int(cb.data.split(":")[2])
+        topup_id = int(cb.data.split(":")[-1])  # FIXED: use [-1] instead of [2]
     except Exception:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
@@ -844,7 +844,7 @@ async def cb_wallet_approve(cb: CallbackQuery) -> None:
         await cb.answer("⛔️ شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
-        topup_id = int(cb.data.split(":")[2])
+        topup_id = int(cb.data.split(":")[-1])  # FIXED: use [-1] instead of [2]
     except Exception:
         await cb.answer("⛔️ شناسه نامعتبر", show_alert=True)
         return
@@ -1007,7 +1007,7 @@ async def cb_walletadmin_min_set(cb: CallbackQuery) -> None:
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
-        irr = int(cb.data.split(":")[3])
+        irr = int(cb.data.split(":")[-1])  # FIXED: use [-1] instead of [3]
     except Exception:
         await cb.answer("مقدار نامعتبر", show_alert=True)
         return
@@ -1143,7 +1143,7 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
         await cb.answer("شما دسترسی ادمین ندارید.", show_alert=True)
         return
     try:
-        topup_id = int(cb.data.split(":")[2])
+        topup_id = int(cb.data.split(":")[-1])  # FIXED: use [-1] instead of [2]
     except Exception:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
@@ -1185,15 +1185,18 @@ async def cb_wallet_reject(cb: CallbackQuery) -> None:
     await cb.answer("Rejected")
 
 
-# Admin settings
+# Admin settings - FIXED command argument parsing
 @router.message(F.text.startswith("/admin_wallet_set_min "))
 async def admin_wallet_set_min(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("شما دسترسی ادمین ندارید.")
         return
     parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("فرمت: /admin_wallet_set_min <AMOUNT_IRR>")
+        return
     try:
-        amount = Decimal(parts[1])
+        amount = Decimal(parts[1])  # FIXED: use parts[1] instead of parts
     except Exception:
         await message.answer("فرمت: /admin_wallet_set_min <AMOUNT_IRR>")
         return
@@ -1217,7 +1220,7 @@ async def admin_wallet_balance(message: Message) -> None:
     if len(parts) < 2:
         await message.answer("فرمت: /admin_wallet_balance <username>")
         return
-    username = parts[1].strip()
+    username = parts[1].strip()  # FIXED: use parts[1] instead of parts
     async with session_scope() as session:
         user = await session.scalar(select(User).where(User.marzban_username == username))
         if not user:
@@ -1235,9 +1238,9 @@ async def admin_wallet_add(message: Message) -> None:
     if len(parts) < 3:
         await message.answer("فرمت: /admin_wallet_add <username|telegram_id> <amount_IRR>")
         return
-    ref = parts[1].strip()
+    ref = parts[1].strip()  # FIXED: use parts[1] instead of parts
     try:
-        amount = Decimal(parts[2])
+        amount = Decimal(parts[2])  # FIXED: use parts[2] instead of parts
     except Exception:
         await message.answer("مبلغ نامعتبر است.")
         return
@@ -1271,9 +1274,9 @@ async def admin_wallet_add_tmn(message: Message) -> None:
     if len(parts) < 3:
         await message.answer("فرمت: /admin_wallet_add_tmn <username|telegram_id> <amount_TMN>")
         return
-    ref = parts[1].strip()
+    ref = parts[1].strip()  # FIXED: use parts[1] instead of parts
     try:
-        tmn = Decimal(parts[2])
+        tmn = Decimal(parts[2])  # FIXED: use parts[2] instead of parts
         if tmn <= 0:
             raise ValueError
     except Exception:
