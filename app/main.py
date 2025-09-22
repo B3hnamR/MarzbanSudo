@@ -28,6 +28,11 @@ from app.config import settings
 from app.marzban.client import aclose_shared as aclose_mz_shared
 
 try:
+    from aiogram.exceptions import SkipHandler
+except ImportError:
+    from aiogram.dispatcher.event.bases import SkipHandler
+
+try:
     # Optional: load .env in non-production environments
     from dotenv import load_dotenv  # type: ignore
     load_dotenv()
@@ -86,7 +91,7 @@ async def main() -> None:
             )
             return await handler(event, data)
 
-    if logging.getLogger().isEnabledFor(logging.DEBUG):
+    if os.getenv("DEBUG_UPDATES", "0").strip() in {"1", "true", "True"}:
         dp.update.middleware(DebugUpdateMiddleware())
 
 
@@ -115,26 +120,25 @@ async def main() -> None:
         try:
             txt = getattr(message, "text", None)
             if not isinstance(txt, str) or txt.startswith("/"):
-                return
+                raise SkipHandler
             from_user = getattr(message, "from_user", None)
             uid = getattr(from_user, "id", None)
             if uid is None:
-                return
+                raise SkipHandler
             from app.utils.intent_store import get_intent_json as _get_intent
             cpw = await _get_intent(f"INTENT:CPW:{uid}")
             if not cpw:
-                return
+                raise SkipHandler
             stage = str(cpw.get("stage") or "")
             if stage in {"await_code", "await_value", "await_cap", "await_min", "await_title"}:
                 from app.bot.handlers import admin_coupons as _ac
                 await _ac._msg_wizard_capture(message)  # type: ignore[attr-defined]
                 return
+        except SkipHandler:
+            raise
         except Exception:
             logging.exception("coupon wizard bridge failed", extra={"extra": {"uid": getattr(getattr(message, "from_user", None), "id", None)}})
-            return
-
-    # cpw bridge registration moved below routers to avoid preempting button handlers
-    pass
+        raise SkipHandler
 
     async def _debug_all_message(message: Message) -> None:
         logging.info(
@@ -177,9 +181,11 @@ async def main() -> None:
             except Exception:
                 pass
             await start_handlers._bridge_wallet_numeric(message)  # type: ignore[attr-defined]
+        except SkipHandler:
+            raise
         except Exception:
             logging.exception("numeric bridge failed", extra={"extra": {"uid": getattr(getattr(message, "from_user", None), "id", None)}})
-            return
+        raise SkipHandler
 
     # Strict numeric (ASCII/Persian digits), then permissive fallback (any text containing digits)
     dp.include_router(router)
