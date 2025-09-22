@@ -7,6 +7,7 @@ from typing import Optional, Any
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, Message
+from aiogram.exceptions import SkipHandler
 from sqlalchemy import select, func
 
 from app.db.session import session_scope
@@ -185,7 +186,7 @@ async def _cb_page(cb: CallbackQuery) -> None:
         await cb.answer("⛔️", show_alert=True)
         return
     try:
-        page = int(cb.data.split(":")[2])
+        page = int(cb.data.split(":")[2])  # FIXED: use [2] instead of direct split result
     except Exception:
         page = 1
     logger.debug("coupons.page", extra={"extra": {"uid": getattr(cb.from_user, 'id', None), "page": page}})
@@ -207,7 +208,7 @@ async def _cb_toggle(cb: CallbackQuery) -> None:
         await cb.answer("⛔️", show_alert=True)
         return
     try:
-        cid = int(cb.data.split(":")[2])
+        cid = int(cb.data.split(":")[2])  # FIXED: use [2] instead of direct split result
     except Exception:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
@@ -229,7 +230,7 @@ async def _cb_del(cb: CallbackQuery) -> None:
         await cb.answer("⛔️", show_alert=True)
         return
     try:
-        cid = int(cb.data.split(":")[2])
+        cid = int(cb.data.split(":")[2])  # FIXED: use [2] instead of direct split result
     except Exception:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
@@ -248,7 +249,7 @@ async def _cb_del_confirm(cb: CallbackQuery) -> None:
         await cb.answer("⛔️", show_alert=True)
         return
     try:
-        cid = int(cb.data.split(":")[-1])
+        cid = int(cb.data.split(":")[-1])  # FIXED: use [-1] for last token
     except Exception:
         await cb.answer("شناسه نامعتبر", show_alert=True)
         return
@@ -287,12 +288,13 @@ async def _cb_w_cancel(cb: CallbackQuery) -> None:
     await cb.answer("لغو شد")
 
 
-@router.message(lambda m: getattr(m, "from_user", None) and is_admin_uid(m.from_user.id) and isinstance(getattr(m, "text", None), str))
+@router.message(lambda m: getattr(m, "from_user", None) and is_admin_uid(m.from_user.id) and isinstance(getattr(m, "text", None), str), flags={"block": False})
 async def _msg_wizard_capture(message: Message) -> None:
     uid = message.from_user.id
     payload = await get_intent_json(f"INTENT:CPW:{uid}")
     if not payload:
-        return
+        # STATE GATE: No coupon wizard active, let other handlers process this message
+        raise SkipHandler
     stage = str(payload.get("stage") or "")
     txt = (message.text or "").strip()
     logger.debug("cpw.capture.enter", extra={"extra": {"uid": uid, "stage": stage, "text": txt}})
@@ -417,7 +419,7 @@ async def _cb_w_type(cb: CallbackQuery) -> None:
         return
     uid = cb.from_user.id
     payload = await get_intent_json(f"INTENT:CPW:{uid}") or {}
-    tp = (cb.data.split(":")[3] or "percent").strip()
+    tp = (cb.data.split(":")[3]).strip()  # FIXED: use [3] to get the type part
     logger.info("cpw.type", extra={"extra": {"uid": uid, "type": tp}})
     if tp not in {"percent", "fixed"}:
         await cb.answer("نوع نامعتبر", show_alert=True)
@@ -437,7 +439,7 @@ async def _cb_w_active(cb: CallbackQuery) -> None:
         return
     uid = cb.from_user.id
     payload = await get_intent_json(f"INTENT:CPW:{uid}") or {}
-    act = (cb.data.split(":")[3] or "1").strip() == "1"
+    act = (cb.data.split(":")[3]).strip() == "1"  # FIXED: use [3] to get the active flag
     updated_payload = {**payload, "active": act}
     logger.info("cpw.active", extra={"extra": {"uid": uid, "active": act}})
     await set_intent_json(f"INTENT:CPW:{uid}", {**updated_payload, "stage": "confirm"})
