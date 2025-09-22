@@ -18,10 +18,6 @@ from app.bot.handlers.account import handle_account as account_handler
 from app.bot.handlers.admin_orders import admin_orders_pending as admin_pending_handler, admin_orders_recent as admin_recent_handler
 from app.bot.handlers.admin_manage import admin_show_plans_menu as admin_plans_menu_handler
 from app.bot.handlers.wallet import (
-    wallet_menu as wallet_menu_handler,
-    admin_wallet_pending_topups as wallet_pending_handler,
-    admin_wallet_manual_add_start as wallet_manual_add_start,
-    admin_wallet_settings_menu as wallet_settings_handler,
     admin_wallet_manual_add_ref as wallet_manual_add_ref,
     handle_wallet_custom_amount as wallet_custom_amount_handler,
     admin_wallet_manual_add_amount as wallet_manual_add_amount_handler,
@@ -166,21 +162,11 @@ async def _btn_account(message: Message) -> None:
     await account_handler(message)
 
 
-@router.message(F.text == "💳 کیف پول")
-async def _btn_wallet(message: Message) -> None:
-    logger.info("start.btn_wallet", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
-    await wallet_menu_handler(message)
-
-
-@router.message(F.text == "➕ شارژ دستی")
-async def _btn_wallet_manual_add(message: Message) -> None:
-    await wallet_manual_add_start(message)
-
-
-@router.message(F.text == "💳 درخواست‌های شارژ")
-async def _btn_admin_wallet_pending(message: Message) -> None:
-    # wallet_pending_handler has its own admin check
-    await wallet_pending_handler(message)
+# DUPLICATE HANDLERS REMOVED - ALL WALLET BUTTONS NOW HANDLED IN wallet.py:
+# - 💳 کیف پول
+# - ➕ شارژ دستی  
+# - 💳 درخواست‌های شارژ
+# - 💼 تنظیمات کیف پول
 
 
 @router.message(F.text == "⚙️ مدیریت پلن‌ها")
@@ -235,11 +221,6 @@ async def _btn_admin_settings_back(message: Message) -> None:
         await message.answer("⛔️ شما دسترسی ادمین ندارید.")
         return
     await message.answer("بازگشت به منوی اصلی ادمین", reply_markup=_admin_keyboard())
-
-# Bridge: Admin Wallet Settings button handled early to avoid router swallowing
-@router.message(F.text == "💼 تنظیمات کیف پول")
-async def _btn_admin_wallet_settings(message: Message) -> None:
-    await wallet_settings_handler(message)
 
 # Bridge: Admin manual-add flow — capture numeric tg_id/username in await_ref stage
 @router.message(F.text.regexp(r"^(?:\d{5,}|[A-Za-z0-9_]{3,})$"), flags={"block": False})
