@@ -45,8 +45,8 @@ _WALLET_MANUAL_ADD_INTENT: Dict[int, Dict[str, object]] = {}
 INFO_PREFIX = "\u200Fℹ️ "
 
 
-_REMOVE_CHARS = '\u200c\u200f\u202a\u202b\u202c\u202d\u202e\ufeff\ufe0f'
-_SUBSTITUTION_MAP = str.maketrans({'\u00a0': ' '})
+_REMOVE_CHARS = '\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u202f\u2060\ufeff\ufe0f'
+_SUBSTITUTION_MAP = str.maketrans({'\u00a0': ' ', '\u202f': ' '})
 
 
 def _normalize_text(value: str | None) -> str:
