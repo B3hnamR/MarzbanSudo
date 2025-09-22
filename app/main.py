@@ -80,7 +80,7 @@ async def main() -> None:
                     payload = event.model_dump()
                 except Exception:
                     payload = repr(event)
-            logging.info(
+            logging.debug(
                 "debug.update",
                 extra={'extra': {'event_type': type(event).__name__, 'payload': payload}},
             )

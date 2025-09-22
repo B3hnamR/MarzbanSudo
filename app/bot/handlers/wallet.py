@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Tuple
 import logging
+import unicodedata
 
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -44,13 +45,22 @@ _WALLET_MANUAL_ADD_INTENT: Dict[int, Dict[str, object]] = {}
 INFO_PREFIX = "\u200Fℹ️ "
 
 
-def _text_matches(value: str | None, target: str) -> bool:
+_REMOVE_CHARS = '\u200c\u200f\u202a\u202b\u202c\u202d\u202e\ufeff\ufe0f'
+_SUBSTITUTION_MAP = str.maketrans({'\u00a0': ' '})
+
+
+def _normalize_text(value: str | None) -> str:
     if not isinstance(value, str):
-        return False
-    remove_map = str.maketrans('', '', '\u200c\u200f\u202a\u202b\u202c\u202d\u202e\ufeff\ufe0f')
-    normalized = value.translate(remove_map).strip()
-    target_normalized = target.translate(remove_map).strip()
-    return normalized == target_normalized
+        return ''
+    normalized = unicodedata.normalize('NFKC', value)
+    normalized = normalized.translate(_SUBSTITUTION_MAP)
+    normalized = normalized.translate(str.maketrans('', '', _REMOVE_CHARS))
+    normalized = ' '.join(normalized.split())
+    return normalized
+
+
+def _text_matches(value: str | None, target: str) -> bool:
+    return _normalize_text(value) == _normalize_text(target)
 
 
 @router.message(F.text == "➕ شارژ دستی")
@@ -706,7 +716,6 @@ async def handle_wallet_photo(message: Message) -> None:
         await session.commit()
     await message.answer("✅ درخواست شارژ ثبت شد و برای ادمین ارسال گردید.")
     try:
-        import logging
         from app.utils.correlation import get_correlation_id
         logging.getLogger(__name__).info(
             "wallet topup created",
