@@ -18,6 +18,10 @@ from app.bot.handlers.account import handle_account as account_handler
 from app.bot.handlers.admin_orders import admin_orders_pending as admin_pending_handler, admin_orders_recent as admin_recent_handler
 from app.bot.handlers.admin_manage import admin_show_plans_menu as admin_plans_menu_handler
 from app.bot.handlers.wallet import (
+    wallet_menu as wallet_menu_handler,
+    admin_wallet_settings_menu as wallet_settings_handler,
+    admin_wallet_manual_add_start as wallet_manual_add_start,
+    admin_wallet_pending_topups as wallet_pending_handler,
     admin_wallet_manual_add_ref as wallet_manual_add_ref,
     handle_wallet_custom_amount as wallet_custom_amount_handler,
     admin_wallet_manual_add_amount as wallet_manual_add_amount_handler,
@@ -27,6 +31,23 @@ from app.bot.handlers.wallet import (
 router = Router()
 
 logger = logging.getLogger(__name__)
+
+# Normalize button texts: remove zero-width chars/variation selectors and unify Yeh/Kaf
+_REMOVE_CHARS = '\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u202f\ufeff\ufe0f'
+_SUBS = str.maketrans({'\u00a0': ' ', '\u202f': ' '})
+
+def _norm_btn_text(s: str | None) -> str:
+    if not isinstance(s, str):
+        return ''
+    t = s.strip().translate(_SUBS)
+    t = t.translate(str.maketrans('', '', _REMOVE_CHARS))
+    # unify Arabic Yeh/Kaf to Persian variants
+    t = t.replace('\u064a', '\u06cc').replace('\u0643', '\u06a9')
+    t = ' '.join(t.split())
+    return t
+
+def _text_matches(val: str | None, target: str) -> bool:
+    return _norm_btn_text(val) == _norm_btn_text(target)
 
 
 def _is_admin(msg: Message) -> bool:
@@ -162,11 +183,30 @@ async def _btn_account(message: Message) -> None:
     await account_handler(message)
 
 
-# DUPLICATE HANDLERS REMOVED - ALL WALLET BUTTONS NOW HANDLED IN wallet.py:
-# - 💳 کیف پول
-# - ➕ شارژ دستی  
-# - 💳 درخواست‌های شارژ
-# - 💼 تنظیمات کیف پول
+# Wallet buttons (normalized matching) → delegate to wallet handlers
+@router.message(F.text == "💳 کیف پول")
+@router.message(lambda m: _text_matches(getattr(m, "text", None), "💳 کیف پول"))
+async def _btn_wallet(message: Message) -> None:
+    logger.info("start.btn.wallet", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
+    await wallet_menu_handler(message)
+
+@router.message(F.text == "💼 تنظیمات کیف پول")
+@router.message(lambda m: _text_matches(getattr(m, "text", None), "💼 تنظیمات کیف پول"))
+async def _btn_admin_wallet_settings(message: Message) -> None:
+    logger.info("start.btn.wallet_settings", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
+    await wallet_settings_handler(message)
+
+@router.message(F.text == "➕ شارژ دستی")
+@router.message(lambda m: _text_matches(getattr(m, "text", None), "➕ شارژ دستی"))
+async def _btn_wallet_manual_add(message: Message) -> None:
+    logger.info("start.btn.wallet_manual_add", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
+    await wallet_manual_add_start(message)
+
+@router.message(F.text == "💳 درخواست‌های شارژ")
+@router.message(lambda m: _text_matches(getattr(m, "text", None), "💳 درخواست‌های شارژ"))
+async def _btn_admin_wallet_pending(message: Message) -> None:
+    logger.info("start.btn.wallet_pending", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
+    await wallet_pending_handler(message)
 
 
 @router.message(F.text == "⚙️ مدیریت پلن‌ها")
