@@ -220,12 +220,7 @@ async def main() -> None:
             F.text.regexp(r".*[0-9\u06F0-\u06F9].*"),
             flags={"block": False},
         )
-        bridge_router.message.register(
-            _cpw_bridge_entry,
-            F.text.regexp(r"^(?!/).+"),
-            flags={"block": False},
-        )
-    except Exception:
+            except Exception:
         pass
 
     dp.include_router(bridge_router)
