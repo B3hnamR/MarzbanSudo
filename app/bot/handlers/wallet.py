@@ -291,7 +291,9 @@ async def admin_wallet_manual_add_amount_fallback(message: Message) -> None:
 
 
 @router.message(F.text == "💳 درخواست‌های شارژ")
+@router.message(lambda m: _text_matches(getattr(m, "text", None), "💳 درخواست‌های شارژ"))
 async def admin_wallet_pending_topups(message: Message) -> None:
+    logger.info("wallet.pending_list", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     # List up to 9 pending wallet top-ups with Approve/Reject buttons
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("⛔️ شما دسترسی ادمین ندارید.")
@@ -374,7 +376,9 @@ async def _get_max_topup(session) -> Decimal | None:
 
 
 @router.message(F.text == "💳 کیف پول")
+@router.message(lambda m: _text_matches(getattr(m, "text", None), "💳 کیف پول"))
 async def wallet_menu(message: Message) -> None:
+    logger.info("wallet.menu", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     if not message.from_user:
         return
     tg_id = message.from_user.id
