@@ -85,4 +85,6 @@ class ChannelGateMiddleware(BaseMiddleware):
                 await event.answer()
         except Exception:
             pass
-        return await handler(event, data)
+        # اینجا مشکل بود - نباید handler رو صدا کنیم اگر کاربر عضو نیست
+        # return await handler(event, data)  # این خط اشتباه بود
+        return  # فقط return کنیم بدون اجرای handler
