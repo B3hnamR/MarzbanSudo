@@ -7,7 +7,10 @@ from typing import Optional, Any
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, Message
-from aiogram.exceptions import SkipHandler
+try:
+    from aiogram.exceptions import SkipHandler
+except ImportError:  # aiogram>=3.5 relocated SkipHandler
+    from aiogram.dispatcher.event.bases import SkipHandler
 from sqlalchemy import select, func
 
 from app.db.session import session_scope

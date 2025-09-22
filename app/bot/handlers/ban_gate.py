@@ -5,7 +5,10 @@ from datetime import datetime
 
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.exceptions import SkipHandler
+try:
+    from aiogram.exceptions import SkipHandler
+except ImportError:  # aiogram>=3.5 relocated SkipHandler
+    from aiogram.dispatcher.event.bases import SkipHandler
 from sqlalchemy import select
 
 from app.db.session import session_scope
