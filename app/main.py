@@ -201,25 +201,28 @@ async def main() -> None:
     # Plans last to avoid its generic text handler swallowing commands
     dp.include_router(plans_handlers.router)
 
-    # Low-priority bridge handlers (register after routers so primary handlers run first)
+    # Low-priority bridge handlers live on a dedicated router so primary handlers run first
+    bridge_router = Router(name="bridge-handlers")
     try:
-        dp.message.register(
+        bridge_router.message.register(
             _numeric_bridge_entry,
             F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]{0,13}$"),
             flags={"block": False},
         )
-        dp.message.register(
+        bridge_router.message.register(
             _numeric_bridge_entry,
             F.text.regexp(r".*[0-9\u06F0-\u06F9].*"),
             flags={"block": False},
         )
-        dp.message.register(
+        bridge_router.message.register(
             _cpw_bridge_entry,
             F.text.regexp(r"^(?!/).+"),
             flags={"block": False},
         )
     except Exception:
         pass
+
+    dp.include_router(bridge_router)
 
     # Polling startup
     logging.info("Starting Telegram bot polling ...")
