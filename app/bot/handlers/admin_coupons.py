@@ -8,9 +8,17 @@ from typing import Optional, Any
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, Message
 try:
-    from aiogram.exceptions import SkipHandler
-except ImportError:  # aiogram>=3.5 relocated SkipHandler
-    from aiogram.dispatcher.event.bases import SkipHandler
+    from aiogram.filters import SkipHandler  # aiogram >= 3.5
+except ImportError:  # pragma: no cover - compatibility fallbacks
+    try:
+        from aiogram.exceptions import SkipHandler  # aiogram < 3.5
+    except ImportError:
+        try:
+            from aiogram.dispatcher.event.bases import SkipHandler  # legacy dispatcher path
+        except ImportError:
+            class SkipHandler(Exception):  # type: ignore[misc]
+                """Fallback SkipHandler for unexpected aiogram layouts."""
+                pass
 from sqlalchemy import select, func
 
 from app.db.session import session_scope

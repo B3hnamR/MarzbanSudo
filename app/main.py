@@ -182,20 +182,6 @@ async def main() -> None:
             return
 
     # Strict numeric (ASCII/Persian digits), then permissive fallback (any text containing digits)
-    try:
-        dp.message.register(
-            _numeric_bridge_entry,
-            F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]{0,13}$"),
-            flags={"block": False},
-        )
-        dp.message.register(
-            _numeric_bridge_entry,
-            F.text.regexp(r".*[0-9\u06F0-\u06F9].*"),
-            flags={"block": False},
-        )
-    except Exception:
-        pass
-
     dp.include_router(router)
     dp.include_router(start_handlers.router)
     # Place admin and control routers before generic message catch-alls
@@ -215,8 +201,18 @@ async def main() -> None:
     # Plans last to avoid its generic text handler swallowing commands
     dp.include_router(plans_handlers.router)
 
-    # Low-priority coupons wizard bridge (after routers) to not preempt button handlers
+    # Low-priority bridge handlers (register after routers so primary handlers run first)
     try:
+        dp.message.register(
+            _numeric_bridge_entry,
+            F.text.regexp(r"^[0-9\u06F0-\u06F9][0-9\u06F0-\u06F9,\.]{0,13}$"),
+            flags={"block": False},
+        )
+        dp.message.register(
+            _numeric_bridge_entry,
+            F.text.regexp(r".*[0-9\u06F0-\u06F9].*"),
+            flags={"block": False},
+        )
         dp.message.register(
             _cpw_bridge_entry,
             F.text.regexp(r"^(?!/).+"),
