@@ -10,6 +10,7 @@ from app.db.models import Setting, User
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE, is_admin_uid
 from sqlalchemy import select
 from app.utils.username import tg_username
+from app.utils.text_normalize import text_matches
 
 # Import existing handlers to reuse their logic without showing slash commands
 from app.bot.handlers.plans import handle_plans as plans_handler
@@ -32,22 +33,6 @@ router = Router()
 
 logger = logging.getLogger(__name__)
 
-# Normalize button texts: remove zero-width chars/variation selectors and unify Yeh/Kaf
-_REMOVE_CHARS = '\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u202f\ufeff\ufe0f'
-_SUBS = str.maketrans({'\u00a0': ' ', '\u202f': ' '})
-
-def _norm_btn_text(s: str | None) -> str:
-    if not isinstance(s, str):
-        return ''
-    t = s.strip().translate(_SUBS)
-    t = t.translate(str.maketrans('', '', _REMOVE_CHARS))
-    # unify Arabic Yeh/Kaf to Persian variants
-    t = t.replace('\u064a', '\u06cc').replace('\u0643', '\u06a9')
-    t = ' '.join(t.split())
-    return t
-
-def _text_matches(val: str | None, target: str) -> bool:
-    return _norm_btn_text(val) == _norm_btn_text(target)
 
 
 def _is_admin(msg: Message) -> bool:
@@ -185,25 +170,25 @@ async def _btn_account(message: Message) -> None:
 
 # Wallet buttons (normalized matching) → delegate to wallet handlers
 @router.message(F.text == "💳 کیف پول")
-@router.message(lambda m: _text_matches(getattr(m, "text", None), "💳 کیف پول"))
+@router.message(lambda m: text_matches(getattr(m, "text", None), "💳 کیف پول"))
 async def _btn_wallet(message: Message) -> None:
     logger.info("start.btn.wallet", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     await wallet_menu_handler(message)
 
 @router.message(F.text == "💼 تنظیمات کیف پول")
-@router.message(lambda m: _text_matches(getattr(m, "text", None), "💼 تنظیمات کیف پول"))
+@router.message(lambda m: text_matches(getattr(m, "text", None), "💼 تنظیمات کیف پول"))
 async def _btn_admin_wallet_settings(message: Message) -> None:
     logger.info("start.btn.wallet_settings", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     await wallet_settings_handler(message)
 
 @router.message(F.text == "➕ شارژ دستی")
-@router.message(lambda m: _text_matches(getattr(m, "text", None), "➕ شارژ دستی"))
+@router.message(lambda m: text_matches(getattr(m, "text", None), "➕ شارژ دستی"))
 async def _btn_wallet_manual_add(message: Message) -> None:
     logger.info("start.btn.wallet_manual_add", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     await wallet_manual_add_start(message)
 
 @router.message(F.text == "💳 درخواست‌های شارژ")
-@router.message(lambda m: _text_matches(getattr(m, "text", None), "💳 درخواست‌های شارژ"))
+@router.message(lambda m: text_matches(getattr(m, "text", None), "💳 درخواست‌های شارژ"))
 async def _btn_admin_wallet_pending(message: Message) -> None:
     logger.info("start.btn.wallet_pending", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     await wallet_pending_handler(message)

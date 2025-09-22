@@ -6,7 +6,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Tuple
 import logging
-import unicodedata
 
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -18,6 +17,7 @@ from app.services.audit import log_audit
 from app.services.security import has_capability_async, CAP_WALLET_MODERATE, get_admin_ids
 from app.utils.username import tg_username
 from app.utils.intent_store import set_intent_json, get_intent_json, clear_intent
+from app.utils.text_normalize import text_matches
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -45,26 +45,10 @@ _WALLET_MANUAL_ADD_INTENT: Dict[int, Dict[str, object]] = {}
 INFO_PREFIX = "\u200Fℹ️ "
 
 
-_REMOVE_CHARS = '\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u202f\u2060\ufeff\ufe0f'
-_SUBSTITUTION_MAP = str.maketrans({'\u00a0': ' ', '\u202f': ' '})
-
-
-def _normalize_text(value: str | None) -> str:
-    if not isinstance(value, str):
-        return ''
-    normalized = unicodedata.normalize('NFKC', value)
-    normalized = normalized.translate(_SUBSTITUTION_MAP)
-    normalized = normalized.translate(str.maketrans('', '', _REMOVE_CHARS))
-    normalized = ' '.join(normalized.split())
-    return normalized
-
-
-def _text_matches(value: str | None, target: str) -> bool:
-    return _normalize_text(value) == _normalize_text(target)
 
 
 @router.message(F.text == "➕ شارژ دستی")
-@router.message(lambda m: _text_matches(getattr(m, "text", None), "➕ شارژ دستی"))
+@router.message(lambda m: text_matches(getattr(m, "text", None), "➕ شارژ دستی"))
 async def admin_wallet_manual_add_start(message: Message) -> None:
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
         await message.answer("⛔️ شما دسترسی ادمین ندارید.")
@@ -301,7 +285,7 @@ async def admin_wallet_manual_add_amount_fallback(message: Message) -> None:
 
 
 @router.message(F.text == "💳 درخواست‌های شارژ")
-@router.message(lambda m: _text_matches(getattr(m, "text", None), "💳 درخواست‌های شارژ"))
+@router.message(lambda m: text_matches(getattr(m, "text", None), "💳 درخواست‌های شارژ"))
 async def admin_wallet_pending_topups(message: Message) -> None:
     logger.info("wallet.pending_list", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     # List up to 9 pending wallet top-ups with Approve/Reject buttons
@@ -386,7 +370,7 @@ async def _get_max_topup(session) -> Decimal | None:
 
 
 @router.message(F.text == "💳 کیف پول")
-@router.message(lambda m: _text_matches(getattr(m, "text", None), "💳 کیف پول"))
+@router.message(lambda m: text_matches(getattr(m, "text", None), "💳 کیف پول"))
 async def wallet_menu(message: Message) -> None:
     logger.info("wallet.menu", extra={'extra': {'uid': getattr(getattr(message, 'from_user', None), 'id', None)}})
     if not message.from_user:
@@ -959,7 +943,7 @@ def _admin_wallet_keyboard(min_irr: Decimal, max_irr: Decimal | None) -> InlineK
 
 
 @router.message(F.text == "💼 تنظیمات کیف پول")
-@router.message(lambda m: _text_matches(getattr(m, "text", None), "💼 تنظیمات کیف پول"))
+@router.message(lambda m: text_matches(getattr(m, "text", None), "💼 تنظیمات کیف پول"))
 async def admin_wallet_settings_menu(message: Message) -> None:
     logger.info("wallet.admin_settings_menu: enter", extra={"extra": {"uid": getattr(message.from_user, 'id', None)}})
     if not (message.from_user and await has_capability_async(message.from_user.id, CAP_WALLET_MODERATE)):
