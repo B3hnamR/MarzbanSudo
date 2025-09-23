@@ -35,6 +35,29 @@
 
 ## راه‌اندازی سریع (توصیه‌شده)
 
+### گزینه 1: اسکریپت راه‌اندازی تعاملی (پیشنهادی)
+
+```bash
+# حالت تعاملی با UI (اگر whiptail/dialog نصب باشد) و انتخاب Simple/Advanced
+bash scripts/setup.sh
+
+# حالت غیرتعاملی برای CI/Automation (از ENV فعلی هم می‌خواند)
+TELEGRAM_BOT_TOKEN=XXXX \
+TELEGRAM_ADMIN_IDS=111111111,222222222 \
+MARZBAN_BASE_URL=https://panel.example.com \
+MARZBAN_ADMIN_USERNAME=admin \
+MARZBAN_ADMIN_PASSWORD=secret \
+APP_ENV=production TZ=Asia/Tehran \
+bash scripts/setup.sh --mode simple --non-interactive
+```
+
+یادداشت‌ها:
+- در حالت Simple/Non-interactive، پسوردهای DB به‌صورت خودکار قوی تولید می‌شوند و DB_URL با URL-encode پسورد ساخته می‌شود.
+- در حالت Advanced می‌توانید همه مقادیر را ویرایش کنید؛ اسکریپت ورودی‌ها را اعتبارسنجی می‌کند.
+- خروجی نهایی: فایل `.env` کامل در ریشه پروژه.
+
+### گزینه 2: بوت‌استرپ کامل روی سرور خام
+
 اسکریپت بوت‌استرپ جهت استقرار خودکار روی سرور خام:
 
 ```bash
@@ -57,7 +80,7 @@ bash scripts/bootstrap.sh
 - فایل `.env` را می‌سازد/به‌روزرسانی می‌کند
 - دایرکتوری‌های logs و data را ایجاد می‌کند
 - سرویس‌ها را با `docker compose up -d --build` بالا می‌آورد
-- healthcheck سرویس‌ها را بررسی می‌کند و لاگ‌های ربات را نمایش می‌دهد
+- healthcheck سرویس��ها را بررسی می‌کند و لاگ‌های ربات را نمایش می‌دهد
 
 ## راه‌اندازی دستی (جایگزین)
 
