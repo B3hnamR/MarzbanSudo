@@ -60,7 +60,13 @@ set_env_if_missing() {
 # Password and URL helpers
 gen_password() {
   local len="${1:-24}"
-  LC_ALL=C tr -dc '-A-Za-z0-9@#%+=_.' < /dev/urandom | head -c "$len" || true
+  if have_cmd openssl; then
+    LC_ALL=C openssl rand -base64 128 2>/dev/null | tr -dc 'A-Za-z0-9@#%+=_.' | head -c "$len" || true
+  elif have_cmd hexdump; then
+    LC_ALL=C hexdump -vn 128 -e '1/1 "%02X"' /dev/urandom 2>/dev/null | tr -dc 'A-Za-z0-9@#%+=_.' | head -c "$len" || true
+  else
+    LC_ALL=C tr -dc 'A-Za-z0-9@#%+=_.' < /dev/urandom | head -c "$len" || true
+  fi
   echo
 }
 
