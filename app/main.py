@@ -182,10 +182,10 @@ async def main() -> None:
                 pass
             await start_handlers._bridge_wallet_numeric(message)  # type: ignore[attr-defined]
         except SkipHandler:
-            raise
+            return
         except Exception:
             logging.exception("numeric bridge failed", extra={"extra": {"uid": getattr(getattr(message, "from_user", None), "id", None)}})
-        raise SkipHandler
+        return
 
     # Strict numeric (ASCII/Persian digits), then permissive fallback (any text containing digits)
     dp.include_router(router)
