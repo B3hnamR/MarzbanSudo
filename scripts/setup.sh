@@ -89,6 +89,17 @@ validate_admin_ids() { [[ "$1" =~ ^[0-9]+(,[0-9]+)*$ ]]; }
 validate_url() { [[ "$1" =~ ^https?://[^\ ]+$ ]]; }
 validate_channel() { [[ -z "$1" || "$1" =~ ^@[^\ ]+$ ]]; }
 validate_db_url() { [[ "$1" =~ ^mysql\+asyncmy://.+@.+/.+\?charset=utf8mb4(\&.*)?$ ]]; }
+# Telegram bot token: digits:token
+validate_bot_token() { [[ "$1" =~ ^[0-9]{6,}:[A-Za-z0-9_-]{20,}$ ]]; }
+# Placeholder detector (case-insensitive)
+is_placeholder() {
+  local v
+  v=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$v" in
+    ''|changeme|change_me|your_token|token|placeholder) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 require_nonempty() {
   local name="$1"; shift
@@ -103,6 +114,7 @@ require_nonempty() {
 UI="${SETUP_UI:-none}"
 NON_INTERACTIVE="0"
 MODE=""
+DEPLOY_NOW="0"
 
 ui_detect() {
   UI="${SETUP_UI:-none}"
@@ -136,6 +148,8 @@ parse_args() {
         MODE="${1#*=}"; shift ;;
       --non-interactive|--yes|-y)
         NON_INTERACTIVE="1"; shift ;;
+      --deploy)
+        DEPLOY_NOW="1"; shift ;;
       *) shift ;;
     esac
   done
@@ -266,7 +280,21 @@ main() {
   local TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS LOG_CHAT_ID REQUIRED_CHANNEL PHONE_VERIFICATION_ENABLED
   if [ "$NON_INTERACTIVE" = "1" ] || [ "$MODE" = "simple" ]; then
     TELEGRAM_BOT_TOKEN="${def_TBT:-}"
+    if ! validate_bot_token "$TELEGRAM_BOT_TOKEN" || is_placeholder "$TELEGRAM_BOT_TOKEN"; then
+      TELEGRAM_BOT_TOKEN="$(prompt_secret "TELEGRAM_BOT_TOKEN" "$TELEGRAM_BOT_TOKEN")"
+      while ! validate_bot_token "$TELEGRAM_BOT_TOKEN"; do
+        echo "[!] Invalid TELEGRAM_BOT_TOKEN. Expected format: 1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        TELEGRAM_BOT_TOKEN="$(prompt_secret "TELEGRAM_BOT_TOKEN" "$TELEGRAM_BOT_TOKEN")"
+      done
+    fi
     TELEGRAM_ADMIN_IDS="${def_TADM:-}"
+    if ! validate_admin_ids "$TELEGRAM_ADMIN_IDS"; then
+      TELEGRAM_ADMIN_IDS="$(prompt "TELEGRAM_ADMIN_IDS (comma-separated numeric IDs)" "$TELEGRAM_ADMIN_IDS")"
+      while ! validate_admin_ids "$TELEGRAM_ADMIN_IDS"; do
+        echo "[!] Invalid TELEGRAM_ADMIN_IDS. Example: 111111111,222222222"
+        TELEGRAM_ADMIN_IDS="$(prompt "TELEGRAM_ADMIN_IDS (comma-separated numeric IDs)" "$TELEGRAM_ADMIN_IDS")"
+      done
+    fi
     LOG_CHAT_ID="$def_LOG_CHAT_ID"
     REQUIRED_CHANNEL="$def_REQ_CH"
     PHONE_VERIFICATION_ENABLED="$def_PV"
@@ -423,22 +451,36 @@ main() {
   echo "[*] .env updated successfully."
 
   if [ "$NON_INTERACTIVE" = "1" ]; then
-    echo "[*] Non-interactive mode complete. You can deploy with: sudo bash scripts/bootstrap.sh"
+    if [ "$DEPLOY_NOW" = "1" ]; then
+      if [ "${EUID:-$(id -u)}" -ne 0 ]; then echo "[!] Deployment requires root (sudo)." >&2; exit 1; fi
+      install_docker; ensure_compose; prepare_runtime; compose_down; compose_up;
+      wait_for_health marzban_sudo_db 180; wait_for_health marzban_sudo_bot 180; wait_for_health marzban_sudo_worker 180 || true;
+      echo "[*] Stack is up. Healthchecks passed."; exit 0
+    fi
+    echo "[*] Non-interactive mode complete. To deploy now, run:"
+    echo "    sudo bash scripts/setup.sh --mode simple --non-interactive --deploy"
     exit 0
   fi
 
   echo
-  read -r -p "Run deployment now (install docker/compose if needed and start stack)? [Y/n]: " ANSW || true
+  read -r -p "Run deployment now (install docker/compose, create dirs, start stack)? [Y/n]: " ANSW || true
   ANSW=${ANSW:-Y}
   if [[ "$ANSW" =~ ^[Yy]$ ]]; then
-    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-      echo "[!] Deployment requires root privileges. Re-run with sudo:"
-      echo "    sudo bash scripts/bootstrap.sh"
-      exit 0
-    fi
-    bash scripts/bootstrap.sh
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then echo "[!] Deployment requires root (sudo)." >&2; exit 1; fi
+    install_docker
+    ensure_compose
+    prepare_runtime
+    compose_down
+    compose_up
+    wait_for_health marzban_sudo_db 180
+    wait_for_health marzban_sudo_bot 180
+    wait_for_health marzban_sudo_worker 180 || true
+    echo "[*] Stack is up. Healthchecks passed."
+    follow_logs
   else
-    echo "[*] You can deploy later by running: bash scripts/bootstrap.sh"
+    echo "[*] You can deploy later with:"
+    echo "    docker compose up -d --build"
+    echo "    docker compose logs -f marzban_sudo_bot"
   fi
 }
 
