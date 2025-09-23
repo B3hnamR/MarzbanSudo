@@ -19,7 +19,7 @@ have_cmd() { command -v "$1" >/dev/null 2>&1; }
 ensure_env_file() {
   if [ ! -f .env ]; then
     echo "[*] .env not found; copying from .env.example"
-    cp -n .env.example .env || touch .env
+    if [ -f .env.example ]; then cp .env.example .env; else touch .env; fi
   fi
 }
 
@@ -60,11 +60,8 @@ set_env_if_missing() {
 # Password and URL helpers
 gen_password() {
   local len="${1:-24}"
-  if have_cmd openssl; then
-    openssl rand -base64 48 | tr -dc 'A-Za-z0-9@#%+=_-.' | head -c "$len"
-  else
-    tr -dc 'A-Za-z0-9@#%+=_-.' < /dev/urandom | head -c "$len"
-  fi
+  LC_ALL=C tr -dc '-A-Za-z0-9@#%+=_.' < /dev/urandom | head -c "$len" || true
+  echo
 }
 
 urlencode() {
@@ -97,14 +94,15 @@ require_nonempty() {
 }
 
 # UI and CLI parsing
-UI="none"
+UI="${SETUP_UI:-none}"
 NON_INTERACTIVE="0"
 MODE=""
 
 ui_detect() {
-  if have_cmd whiptail; then UI="whiptail"; return; fi
-  if have_cmd dialog; then UI="dialog"; return; fi
-  UI="none"
+  UI="${SETUP_UI:-none}"
+  if [ "$UI" = "auto" ]; then
+    if have_cmd whiptail; then UI="whiptail"; elif have_cmd dialog; then UI="dialog"; else UI="none"; fi
+  fi
 }
 
 ui_yesno() {
@@ -207,15 +205,7 @@ main() {
     if [ "$NON_INTERACTIVE" = "1" ]; then
       MODE="simple"
     else
-      if [ "$UI" != "none" ]; then
-        if ui_yesno "استفاده از حالت Simple (سوالات حداقلی و تولید خودکار پسوردها)؟"; then
-          MODE="simple"
-        else
-          MODE="advanced"
-        fi
-      else
-        MODE="$(prompt "Mode (simple/advanced)" "simple")"
-      fi
+      MODE="$(prompt "Mode (simple/advanced)" "simple")"
     fi
   fi
 
